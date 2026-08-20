@@ -5162,6 +5162,179 @@
         `;
         document.head.appendChild(styleSheet);
 
+        // ============ IFOOD INTEGRATION ============
+        const ifoodApi = {
+            request: async (route, options = {}) => {
+                const response = await fetch(`/api/ifood?route=${encodeURIComponent(route)}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(options.headers || {})
+                    },
+                    ...options
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || 'Falha ao comunicar com iFood');
+                }
+                return data;
+            },
+            health: () => ifoodApi.request('health'),
+            events: () => ifoodApi.request('events'),
+            acknowledge: (events) => ifoodApi.request('events/acknowledgment', {
+                method: 'POST',
+                body: JSON.stringify({ events })
+            }),
+            order: (orderId) => ifoodApi.request(`orders/${orderId}`),
+            action: (orderId, action, payload = {}) => ifoodApi.request(`orders/${orderId}/${action}`, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            })
+        };
+
+        function ensureIfoodPanel() {
+            if (document.getElementById('ifoodIntegrationPanel')) return;
+
+            const dashboard = document.getElementById('dashboard');
+            if (!dashboard) return;
+
+            const panel = document.createElement('div');
+            panel.className = 'table-container';
+            panel.id = 'ifoodIntegrationPanel';
+            panel.style.marginTop = '20px';
+            panel.innerHTML = `
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Integração iFood</h2>
+                        <p style="color: var(--text-secondary); margin-top: 4px; font-size: 13px;">
+                            Receba eventos do iFood e consulte detalhes de pedidos com segurança pelo backend.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" type="button" onclick="checkIfoodStatus()">Verificar</button>
+                        <button class="btn btn-primary" type="button" onclick="syncIfoodEvents()">Buscar Eventos</button>
+                    </div>
+                </div>
+                <div id="ifoodStatus" class="alert alert-info" style="display: block;">
+                    Configure IFOOD_CLIENT_ID e IFOOD_CLIENT_SECRET no Vercel para ativar a integração.
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Evento</th>
+                                <th>Pedido</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ifoodEventsTableBody">
+                            <tr>
+                                <td colspan="4" class="empty-state">Nenhum evento carregado ainda.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            dashboard.appendChild(panel);
+        }
+
+        function setIfoodStatus(message, type = 'info') {
+            const status = document.getElementById('ifoodStatus');
+            if (!status) return;
+            status.className = `alert alert-${type}`;
+            status.style.display = 'block';
+            status.textContent = message;
+        }
+
+        async function checkIfoodStatus() {
+            ensureIfoodPanel();
+            try {
+                const result = await ifoodApi.health();
+                if (result.configured) {
+                    setIfoodStatus('Integração configurada. As credenciais do iFood estão disponíveis no backend.', 'success');
+                } else {
+                    setIfoodStatus('Faltam as variáveis IFOOD_CLIENT_ID e IFOOD_CLIENT_SECRET no Vercel.', 'warning');
+                }
+            } catch (error) {
+                setIfoodStatus(error.message, 'danger');
+            }
+        }
+
+        function getIfoodOrderId(event) {
+            return event.orderId || event.order_id || event.resourceId || event.resource?.id || event.metadata?.orderId || '';
+        }
+
+        function renderIfoodEvents(events) {
+            const tbody = document.getElementById('ifoodEventsTableBody');
+            if (!tbody) return;
+
+            if (!events.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Nenhum evento novo retornado pelo iFood.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = events.map(event => {
+                const orderId = getIfoodOrderId(event);
+                const eventId = event.id || event.eventId || '-';
+                const code = event.code || event.fullCode || event.type || '-';
+                return `
+                    <tr>
+                        <td>
+                            <strong>${code}</strong><br>
+                            <small>${eventId}</small>
+                        </td>
+                        <td>${orderId || '-'}</td>
+                        <td>${event.createdAt || event.created_at || '-'}</td>
+                        <td>
+                            ${orderId ? `<button class="btn btn-secondary" type="button" onclick="loadIfoodOrder('${orderId}')">Detalhes</button>` : ''}
+                            <button class="btn btn-primary" type="button" onclick='acknowledgeIfoodEvent(${JSON.stringify(event).replace(/'/g, '&apos;')})'>Confirmar Evento</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function syncIfoodEvents() {
+            ensureIfoodPanel();
+            setIfoodStatus('Buscando eventos no iFood...', 'info');
+            try {
+                const result = await ifoodApi.events();
+                const events = result.events || [];
+                storage.set('ifoodEvents', events);
+                renderIfoodEvents(events);
+                setIfoodStatus(`${events.length} evento(s) recebido(s) do iFood.`, 'success');
+            } catch (error) {
+                setIfoodStatus(error.message, 'danger');
+            }
+        }
+
+        async function acknowledgeIfoodEvent(event) {
+            try {
+                await ifoodApi.acknowledge([event]);
+                setIfoodStatus('Evento confirmado no iFood.', 'success');
+                await syncIfoodEvents();
+            } catch (error) {
+                setIfoodStatus(error.message, 'danger');
+            }
+        }
+
+        async function loadIfoodOrder(orderId) {
+            setIfoodStatus(`Carregando pedido ${orderId}...`, 'info');
+            try {
+                const result = await ifoodApi.order(orderId);
+                storage.set('lastIfoodOrder', result.order);
+                setIfoodStatus(`Pedido ${orderId} carregado. Os dados foram salvos localmente para conferência.`, 'success');
+                console.log('Pedido iFood:', result.order);
+            } catch (error) {
+                setIfoodStatus(error.message, 'danger');
+            }
+        }
+
+        ensureIfoodPanel();
+        const savedIfoodEvents = storage.get('ifoodEvents') || [];
+        renderIfoodEvents(savedIfoodEvents);
+
         // Auto-update dashboard every minute
         setInterval(() => {
             if (document.getElementById('dashboard').classList.contains('active')) {
