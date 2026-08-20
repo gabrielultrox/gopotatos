@@ -1885,10 +1885,38 @@
     <script>
         // ============ STORAGE ============
         const storage = {
-            getAll: (key) => JSON.parse(localStorage.getItem(key)) || [],
+            getAll: (key) => {
+                try {
+                    const value = JSON.parse(localStorage.getItem(key));
+                    return Array.isArray(value) ? value : [];
+                } catch (error) {
+                    console.warn(`Dados inválidos em ${key}. Mantendo armazenamento sem sobrescrever.`, error);
+                    return [];
+                }
+            },
             save: (key, data) => localStorage.setItem(key, JSON.stringify(data)),
-            get: (key) => JSON.parse(localStorage.getItem(key)) || null,
+            get: (key) => {
+                try {
+                    return JSON.parse(localStorage.getItem(key)) || null;
+                } catch (error) {
+                    console.warn(`Dados inválidos em ${key}.`, error);
+                    return null;
+                }
+            },
             set: (key, data) => localStorage.setItem(key, JSON.stringify(data))
+        };
+
+        const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[char]));
+
+        const toNumber = (value, fallback = 0) => {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : fallback;
         };
 
         // ============ STATE ============
@@ -2039,8 +2067,8 @@
 
         document.getElementById('newDailyCloseBtn').addEventListener('click', () => {
             editingClosureId = null;
-            document.getElementById('closeDate').valueAsDate = new Date();
             document.getElementById('dailyCloseForm').reset();
+            document.getElementById('closeDate').valueAsDate = new Date();
             document.getElementById('dailyCloseModalTitle').textContent = 'Novo Fechamento';
             openModal('dailyCloseModal');
         });
@@ -2359,7 +2387,7 @@
                 const margin = (profit / p.price * 100).toFixed(1);
                 return `
                     <tr>
-                        <td>${p.name}</td>
+                        <td>${escapeHTML(p.name)}</td>
                         <td>${formatCurrency(p.price)}</td>
                         <td>${formatCurrency(p.cost)}</td>
                         <td>${formatCurrency(profit)}</td>
@@ -2418,7 +2446,7 @@
                 const status = isLow ? '<span class="badge badge-yellow">⚠️ Baixo</span>' : '<span class="badge badge-green">✓ OK</span>';
                 return `
                     <tr>
-                        <td>${p.name}</td>
+                        <td>${escapeHTML(p.name)}</td>
                         <td>${p.stock}</td>
                         <td>${p.minStock}</td>
                         <td>${status}</td>
@@ -2435,18 +2463,27 @@
         function updateStock(id) {
             const products = storage.getAll('products');
             const product = products.find(p => p.id === id);
+            if (!product) return;
             const newStock = prompt(`Novo estoque para ${product.name} (atual: ${product.stock}):`, product.stock);
-            if (newStock !== null && !isNaN(newStock)) {
-                product.stock = parseInt(newStock);
+            if (newStock !== null) {
+                const parsedStock = parseInt(newStock, 10);
+                if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+                    alert('Informe um estoque válido, sem números negativos.');
+                    return;
+                }
+
+                product.stock = parsedStock;
                 storage.save('products', products);
                 renderInventoryTable();
+                renderProductsTable();
+                updateDashboard();
             }
         }
 
         // ============ EXPENSES ============
         document.getElementById('newExpenseBtn').addEventListener('click', () => {
-            document.getElementById('expenseDate').valueAsDate = new Date();
             document.getElementById('expenseForm').reset();
+            document.getElementById('expenseDate').valueAsDate = new Date();
             openModal('expenseModal');
         });
 
@@ -2482,8 +2519,8 @@
             tbody.innerHTML = expenses.map(e => `
                 <tr>
                     <td>${dateUtils.formatBR(e.date)}</td>
-                    <td>${e.description}</td>
-                    <td>${e.category}</td>
+                    <td>${escapeHTML(e.description)}</td>
+                    <td>${escapeHTML(e.category)}</td>
                     <td>${formatCurrency(e.amount)}</td>
                     <td>
                         <button class="btn btn-danger" onclick="deleteExpense(${e.id})">Excluir</button>
@@ -2562,7 +2599,9 @@
             }
 
             tbody.innerHTML = goals.map(g => {
-                const progress = Math.min((g.current / g.target * 100).toFixed(1), 100);
+                const target = toNumber(g.target);
+                const current = toNumber(g.current);
+                const progress = target > 0 ? Math.min((current / target * 100), 100).toFixed(1) : '0.0';
                 const typeLabel = {
                     revenue: 'Faturamento',
                     profit: 'Lucro',
@@ -2579,10 +2618,10 @@
 
                 return `
                     <tr>
-                        <td>${g.title}</td>
-                        <td>${typeLabel}</td>
-                        <td>${formatCurrency(g.target)}</td>
-                        <td>${formatCurrency(g.current)}</td>
+                        <td>${escapeHTML(g.title)}</td>
+                        <td>${escapeHTML(typeLabel)}</td>
+                        <td>${formatCurrency(target)}</td>
+                        <td>${formatCurrency(current)}</td>
                         <td>
                             <div style="background: var(--light-bg); border-radius: 4px; height: 20px; overflow: hidden;">
                                 <div style="background: var(--primary-red); height: 100%; width: ${progress}%; transition: width 0.3s;"></div>
@@ -2621,8 +2660,8 @@
 
         // ============ CALENDAR ============
         document.getElementById('newEventBtn').addEventListener('click', () => {
-            document.getElementById('eventDate').valueAsDate = new Date();
             document.getElementById('eventForm').reset();
+            document.getElementById('eventDate').valueAsDate = new Date();
             openModal('eventModal');
         });
 
@@ -2762,7 +2801,7 @@
             const profit = totals.netRevenue - totals.cmv - totals.costs;
             const margin = totals.netRevenue > 0 ? (profit / totals.netRevenue * 100) : 0;
             const eventText = events.length
-                ? `\nEventos:\n${events.map(event => `- ${event.title}${event.description ? `: ${event.description}` : ''}`).join('\n')}`
+                ? `\nEventos:\n${events.map(event => `- ${event.title || 'Evento'}${event.description ? `: ${event.description}` : ''}`).join('\n')}`
                 : '';
             const closeText = closes.length
                 ? `Faturamento bruto: ${formatCurrency(totals.grossRevenue)}\nFaturamento líquido: ${formatCurrency(totals.netRevenue)}\nLucro: ${formatCurrency(profit)}\nMargem: ${margin.toFixed(1)}%\nPedidos: ${totals.orders}\nCMV: ${formatCurrency(totals.cmv)}\nCustos: ${formatCurrency(totals.costs)}\nTaxas: ${formatCurrency(totals.fees)}`
@@ -2796,8 +2835,8 @@
             tbody.innerHTML = events.map(e => `
                 <tr>
                     <td>${dateUtils.formatBR(e.date)}</td>
-                    <td>${e.title}</td>
-                    <td>${e.description || '—'}</td>
+                    <td>${escapeHTML(e.title)}</td>
+                    <td>${escapeHTML(e.description || '—')}</td>
                     <td>
                         <button class="btn btn-danger" onclick="deleteEvent(${e.id})">Excluir</button>
                     </td>
@@ -3479,7 +3518,7 @@
                         </tr>
                         ${Object.entries(data.expensesByCategory).map(([category, amount]) => `
                             <tr>
-                                <td style="padding-left: 24px;">${category.charAt(0).toUpperCase() + category.slice(1)}</td>
+                                <td style="padding-left: 24px;">${escapeHTML(category.charAt(0).toUpperCase() + category.slice(1))}</td>
                                 <td class="dre-value negative">${formatCurrency(amount)}</td>
                                 <td class="dre-value negative">${((amount / data.grossRevenue) * 100).toFixed(2)}%</td>
                             </tr>
@@ -4037,7 +4076,7 @@
                                 const stockValue = p.price * p.stock;
                                 return `
                                     <tr>
-                                        <td>${p.name}</td>
+                                        <td>${escapeHTML(p.name)}</td>
                                         <td>${formatCurrency(p.price)}</td>
                                         <td>${formatCurrency(p.cost)}</td>
                                         <td>${formatCurrency(profit)}</td>
@@ -4122,7 +4161,7 @@
                                 const stockValue = p.price * p.stock;
                                 return `
                                     <tr>
-                                        <td>${p.name}</td>
+                                        <td>${escapeHTML(p.name)}</td>
                                         <td>${p.stock}</td>
                                         <td>${p.minStock}</td>
                                         <td>${diff}</td>
@@ -4205,8 +4244,8 @@
                             ${expenses.map(e => `
                                 <tr>
                                     <td>${dateUtils.formatBR(e.date)}</td>
-                                    <td>${e.description}</td>
-                                    <td>${e.category}</td>
+                                    <td>${escapeHTML(e.description)}</td>
+                                    <td>${escapeHTML(e.category)}</td>
                                     <td>${formatCurrency(e.amount)}</td>
                                 </tr>
                             `).join('')}
@@ -4287,7 +4326,7 @@
                                 const percentage = totalCost > 0 ? (unitCost / totalCost * 100) : 0;
                                 return `
                                     <tr>
-                                        <td>${p.name}</td>
+                                        <td>${escapeHTML(p.name)}</td>
                                         <td>${formatCurrency(p.cost)}</td>
                                         <td>${p.stock}</td>
                                         <td>${formatCurrency(unitCost)}</td>
@@ -4487,8 +4526,8 @@
         }
 
         // ============ SETTINGS & DATA MANAGEMENT ============
-        function exportAllData() {
-            const allData = {
+        function collectAllData() {
+            return {
                 version: '1.0.0',
                 exportDate: new Date().toISOString(),
                 data: {
@@ -4500,13 +4539,17 @@
                     events: storage.getAll('events')
                 }
             };
+        }
+
+        function downloadDataBackup(filenamePrefix = 'gopotatos-backup') {
+            const allData = collectAllData();
             
             const dataString = JSON.stringify(allData, null, 2);
             const blob = new Blob([dataString], { type: 'application/json' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             
-            const filename = `gopotatos-backup-${new Date().toISOString().split('T')[0]}.json`;
+            const filename = `${filenamePrefix}-${new Date().toISOString().split('T')[0]}.json`;
             link.setAttribute('href', url);
             link.setAttribute('download', filename);
             link.style.visibility = 'hidden';
@@ -4514,6 +4557,11 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        function exportAllData() {
+            downloadDataBackup();
             
             alert('✅ Dados exportados com sucesso!');
         }
@@ -4559,8 +4607,10 @@
         });
 
         function clearAllData() {
-            if (confirm('⚠️ Você tem certeza? Isso vai deletar TODOS os dados (sem possibilidade de recuperação)')) {
+            if (confirm('⚠️ Você tem certeza? Isso vai deletar TODOS os dados cadastrados. Um backup será baixado automaticamente antes da limpeza.')) {
                 if (confirm('🚨 Última chance! Realmente quer deletar tudo?')) {
+                    downloadDataBackup('gopotatos-backup-antes-de-limpar');
+
                     storage.save('dailyCloses', []);
                     storage.save('products', []);
                     storage.save('inventory', []);
