@@ -1037,6 +1037,19 @@
     </style>
     <!-- Hidden input para importar arquivo -->
     <input type="file" id="importFileInput" accept=".json" style="display: none;">
+    <div class="modal" id="importPreviewModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Prévia da Importação</span>
+                <button class="modal-close" onclick="closeModal('importPreviewModal')">✕</button>
+            </div>
+            <div id="importPreviewContent"></div>
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="confirmImportPreview()">Importar e Sobrescrever</button>
+                <button class="btn btn-secondary" onclick="cancelImportPreview()">Cancelar</button>
+            </div>
+        </div>
+    </div>
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="data:application/manifest+json,{
@@ -1383,6 +1396,24 @@
                     ⚠️ <strong>Atenção!</strong> Alguns produtos estão com estoque abaixo do mínimo.
                 </div>
 
+                <div class="stats-row">
+                    <div class="card">
+                        <div class="card-label">Valor em Estoque</div>
+                        <div class="card-value" id="inventoryStockValue">R$ 0,00</div>
+                        <div class="card-subtext">Custo estimado dos produtos parados</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Itens para Comprar</div>
+                        <div class="card-value red" id="inventoryBuyCount">0</div>
+                        <div class="card-subtext">Abaixo do estoque mínimo</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Compra Sugerida</div>
+                        <div class="card-value" id="inventorySuggestedCost">R$ 0,00</div>
+                        <div class="card-subtext">Para voltar ao mínimo</div>
+                    </div>
+                </div>
+
                 <div class="chart-container">
                     <div class="table-container">
                         <table id="inventoryTable">
@@ -1404,6 +1435,11 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div class="chart-container mt-24">
+                    <div class="chart-title">Lista de Compras Sugerida</div>
+                    <div id="purchaseSuggestionContainer"></div>
                 </div>
             </section>
 
@@ -1665,6 +1701,7 @@
 
                 <!-- REPORT TYPES -->
                 <div class="stats-row" style="margin-bottom: 24px;">
+                    <button class="btn btn-primary" onclick="generateReport('smartSummary')">🧠 Resumo Inteligente</button>
                     <button class="btn btn-secondary" onclick="generateReport('closures')">📋 Fechamentos</button>
                     <button class="btn btn-secondary" onclick="generateReport('products')">📦 Produtos</button>
                     <button class="btn btn-secondary" onclick="generateReport('inventory')">📈 Estoque</button>
@@ -2610,10 +2647,25 @@
             const products = storage.getAll('products');
             const tbody = document.getElementById('inventoryTableBody');
             let hasLowStock = false;
+            const stockValue = products.reduce((sum, p) => sum + ((p.cost || 0) * (p.stock || 0)), 0);
+            const purchaseSuggestions = products
+                .map(p => ({
+                    ...p,
+                    missing: Math.max((p.minStock || 0) - (p.stock || 0), 0),
+                    suggestedCost: Math.max((p.minStock || 0) - (p.stock || 0), 0) * (p.cost || 0)
+                }))
+                .filter(p => p.missing > 0)
+                .sort((a, b) => b.suggestedCost - a.suggestedCost);
+            const suggestedCost = purchaseSuggestions.reduce((sum, p) => sum + p.suggestedCost, 0);
+
+            document.getElementById('inventoryStockValue').textContent = formatCurrency(stockValue);
+            document.getElementById('inventoryBuyCount').textContent = purchaseSuggestions.length;
+            document.getElementById('inventorySuggestedCost').textContent = formatCurrency(suggestedCost);
 
             if (products.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: var(--text-secondary); padding: 40px;">Nenhum produto no estoque</td></tr>';
                 document.getElementById('lowStockAlert').style.display = 'none';
+                document.getElementById('purchaseSuggestionContainer').innerHTML = '<p class="empty-state">Cadastre produtos para gerar sugestões de compra.</p>';
                 return;
             }
 
@@ -2635,6 +2687,42 @@
             }).join('');
 
             document.getElementById('lowStockAlert').style.display = hasLowStock ? 'block' : 'none';
+            renderPurchaseSuggestions(purchaseSuggestions);
+        }
+
+        function renderPurchaseSuggestions(suggestions) {
+            const container = document.getElementById('purchaseSuggestionContainer');
+            if (!container) return;
+
+            if (suggestions.length === 0) {
+                container.innerHTML = '<p class="empty-state">Tudo dentro do mínimo. Nenhuma compra sugerida agora.</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Produto</th>
+                            <th>Estoque</th>
+                            <th>Mínimo</th>
+                            <th>Comprar</th>
+                            <th>Custo Estimado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${suggestions.map(p => `
+                            <tr>
+                                <td>${escapeHTML(p.name)}</td>
+                                <td>${p.stock || 0}</td>
+                                <td>${p.minStock || 0}</td>
+                                <td><strong>${p.missing}</strong></td>
+                                <td>${formatCurrency(p.suggestedCost)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
         }
 
         function updateStock(id) {
@@ -4134,6 +4222,9 @@
             currentReportRange = range;
 
             switch(type) {
+                case 'smartSummary':
+                    generateSmartSummaryReport(range);
+                    break;
                 case 'closures':
                     generateClosuresReport(range);
                     break;
@@ -4155,6 +4246,126 @@
             }
 
             document.getElementById('exportButtons').style.display = 'flex';
+        }
+
+        function generateSmartSummaryReport(range) {
+            const dailyCloses = storage.getAll('dailyCloses')
+                .filter(dc => dateUtils.isBetween(dc.date, range.start, range.end))
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+            const expenses = storage.getAll('expenses')
+                .filter(e => dateUtils.isBetween(e.date, range.start, range.end));
+
+            currentReportData = {
+                type: 'smartSummary',
+                title: 'Resumo Inteligente',
+                range,
+                data: dailyCloses
+            };
+
+            let html = `
+                <div class="report-header">
+                    <div>
+                        <div class="report-title">🧠 Resumo Inteligente</div>
+                        <div class="report-period">${dateUtils.formatBR(range.start)} a ${dateUtils.formatBR(range.end)}</div>
+                    </div>
+                </div>
+            `;
+
+            if (dailyCloses.length === 0) {
+                html += `
+                    <div class="report-empty">
+                        <div class="report-empty-icon">🧠</div>
+                        <p>Nenhum fechamento registrado neste período</p>
+                    </div>
+                `;
+                document.getElementById('reportContainer').innerHTML = html;
+                return;
+            }
+
+            const totalGross = dailyCloses.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0);
+            const totalNet = dailyCloses.reduce((sum, dc) => sum + (dc.netRevenue || 0), 0);
+            const totalCosts = dailyCloses.reduce((sum, dc) => sum + (dc.costs || 0), 0);
+            const totalOrders = dailyCloses.reduce((sum, dc) => sum + (dc.orders || 0), 0);
+            const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+            const profit = totalNet - totalCosts - totalExpenses;
+            const avgDailyGross = totalGross / dailyCloses.length;
+            const avgTicket = totalOrders > 0 ? totalGross / totalOrders : 0;
+            const margin = totalNet > 0 ? profit / totalNet * 100 : 0;
+            const bestDay = [...dailyCloses].sort((a, b) => (b.grossRevenue || 0) - (a.grossRevenue || 0))[0];
+            const worstDay = [...dailyCloses].sort((a, b) => (a.grossRevenue || 0) - (b.grossRevenue || 0))[0];
+            const notes = dailyCloses.filter(dc => dc.notes).slice(-5);
+            const recommendation = profit < 0
+                ? 'Prioridade: revisar custos/despesas, porque o período fechou negativo.'
+                : margin < 15
+                    ? 'A margem está apertada. Vale revisar taxas, custos e preço médio.'
+                    : totalOrders === 0
+                        ? 'Sem pedidos registrados. Confira se os fechamentos foram preenchidos corretamente.'
+                        : 'Período saudável. Acompanhe ticket médio e mantenha frequência de fechamento.';
+
+            html += `
+                <div class="report-summary">
+                    <div class="report-summary-item">
+                        <div class="report-summary-label">Faturamento Bruto</div>
+                        <div class="report-summary-value">${formatCurrency(totalGross)}</div>
+                    </div>
+                    <div class="report-summary-item">
+                        <div class="report-summary-label">Lucro Estimado</div>
+                        <div class="report-summary-value ${profit >= 0 ? 'positive' : 'negative'}">${formatCurrency(profit)}</div>
+                    </div>
+                    <div class="report-summary-item">
+                        <div class="report-summary-label">Margem</div>
+                        <div class="report-summary-value">${margin.toFixed(1)}%</div>
+                    </div>
+                    <div class="report-summary-item">
+                        <div class="report-summary-label">Ticket Médio</div>
+                        <div class="report-summary-value">${formatCurrency(avgTicket)}</div>
+                    </div>
+                </div>
+                <div class="insights-container" style="margin-top: 20px;">
+                    <div class="insight-item insight-revenue">
+                        <span class="insight-icon">📊</span>
+                        <span class="insight-text">${escapeHTML(`Média diária de faturamento: ${formatCurrency(avgDailyGross)} em ${dailyCloses.length} dia(s) registrado(s).`)}</span>
+                    </div>
+                    <div class="insight-item insight-day">
+                        <span class="insight-icon">🏆</span>
+                        <span class="insight-text">${escapeHTML(`Melhor dia: ${dateUtils.formatBR(bestDay.date)} com ${formatCurrency(bestDay.grossRevenue || 0)}.`)}</span>
+                    </div>
+                    <div class="insight-item insight-day">
+                        <span class="insight-icon">🔎</span>
+                        <span class="insight-text">${escapeHTML(`Dia mais fraco: ${dateUtils.formatBR(worstDay.date)} com ${formatCurrency(worstDay.grossRevenue || 0)}.`)}</span>
+                    </div>
+                    <div class="insight-item insight-goal">
+                        <span class="insight-icon">🧭</span>
+                        <span class="insight-text">${escapeHTML(recommendation)}</span>
+                    </div>
+                </div>
+            `;
+
+            if (notes.length) {
+                html += `
+                    <div class="chart-container mt-24">
+                        <div class="chart-title">Observações Recentes do Período</div>
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Observação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${notes.map(dc => `
+                                    <tr>
+                                        <td>${dateUtils.formatBR(dc.date)}</td>
+                                        <td>${escapeHTML(dc.notes)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            document.getElementById('reportContainer').innerHTML = html;
         }
 
         function generateClosuresReport(range) {
@@ -4679,6 +4890,14 @@
 
             // Content based on report type
             switch(type) {
+                case 'smartSummary':
+                    csv.push('"Data","Faturamento Bruto","Faturamento Líquido","Pedidos","Custos","Lucro Estimado","Observações"');
+                    data.forEach(dc => {
+                        const profit = (dc.netRevenue || 0) - (dc.costs || 0);
+                        csv.push(`"${dateUtils.formatBR(dc.date)}","${(dc.grossRevenue || 0).toFixed(2)}","${(dc.netRevenue || 0).toFixed(2)}","${dc.orders || 0}","${(dc.costs || 0).toFixed(2)}","${profit.toFixed(2)}","${(dc.notes || '').replace(/"/g, '""')}"`);
+                    });
+                    break;
+
                 case 'closures':
                     csv.push('"Data","Faturamento Bruto","Faturamento Líquido","Pedidos","CMV","Custos","Lucro"');
                     data.forEach(dc => {
@@ -4867,6 +5086,77 @@
             `).join('');
         }
 
+        let pendingImportData = null;
+
+        function getImportSummary(importedData) {
+            const data = importedData.data || {};
+            const keys = [
+                ['dailyCloses', 'Fechamentos'],
+                ['products', 'Produtos'],
+                ['expenses', 'Despesas'],
+                ['goals', 'Metas'],
+                ['events', 'Eventos']
+            ];
+
+            return keys.map(([key, label]) => ({
+                label,
+                count: Array.isArray(data[key]) ? data[key].length : 0
+            }));
+        }
+
+        function showImportPreview(importedData) {
+            pendingImportData = importedData;
+            const summary = getImportSummary(importedData);
+            const exportDate = importedData.exportDate ? new Date(importedData.exportDate).toLocaleString('pt-BR') : 'Não informado';
+
+            document.getElementById('importPreviewContent').innerHTML = `
+                <div class="alert alert-warning" style="display: block;">
+                    Esta importação vai sobrescrever os dados atuais. Um backup será baixado automaticamente antes.
+                </div>
+                <p style="margin: 12px 0; color: var(--text-secondary);">Backup original gerado em: ${escapeHTML(exportDate)}</p>
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Registros no arquivo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${summary.map(item => `
+                            <tr>
+                                <td>${escapeHTML(item.label)}</td>
+                                <td>${item.count}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            openModal('importPreviewModal');
+        }
+
+        function cancelImportPreview() {
+            pendingImportData = null;
+            closeModal('importPreviewModal');
+        }
+
+        function confirmImportPreview() {
+            if (!pendingImportData?.data) return;
+            downloadDataBackup('gopotatos-backup-antes-de-importar');
+            const data = pendingImportData.data;
+
+            if (Array.isArray(data.dailyCloses)) storage.save('dailyCloses', data.dailyCloses);
+            if (Array.isArray(data.products)) storage.save('products', data.products);
+            if (Array.isArray(data.inventory)) storage.save('inventory', data.inventory);
+            if (Array.isArray(data.expenses)) storage.save('expenses', data.expenses);
+            if (Array.isArray(data.goals)) storage.save('goals', data.goals);
+            if (Array.isArray(data.events)) storage.save('events', data.events);
+
+            pendingImportData = null;
+            closeModal('importPreviewModal');
+            alert('✅ Dados importados com sucesso! A página será recarregada.');
+            location.reload();
+        }
+
         document.getElementById('importFileInput').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -4880,19 +5170,8 @@
                         alert('❌ Arquivo inválido. Não contém dados válidos.');
                         return;
                     }
-                    
-                    if (confirm('⚠️ Isso vai sobrescrever todos os dados atuais. Deseja continuar?')) {
-                        // Importar dados
-                        if (importedData.data.dailyCloses) storage.save('dailyCloses', importedData.data.dailyCloses);
-                        if (importedData.data.products) storage.save('products', importedData.data.products);
-                        if (importedData.data.inventory) storage.save('inventory', importedData.data.inventory);
-                        if (importedData.data.expenses) storage.save('expenses', importedData.data.expenses);
-                        if (importedData.data.goals) storage.save('goals', importedData.data.goals);
-                        if (importedData.data.events) storage.save('events', importedData.data.events);
-                        
-                        alert('✅ Dados importados com sucesso! A página será recarregada.');
-                        location.reload();
-                    }
+
+                    showImportPreview(importedData);
                 } catch (error) {
                     alert('❌ Erro ao importar arquivo: ' + error.message);
                 }
