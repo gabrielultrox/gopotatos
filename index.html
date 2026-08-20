@@ -570,6 +570,31 @@
             background: rgba(40, 167, 69, 0.04);
         }
 
+        .calendar-day.performance-strong {
+            border-color: rgba(40, 167, 69, 0.75);
+            background: rgba(40, 167, 69, 0.12);
+        }
+
+        .calendar-day.performance-good {
+            border-color: rgba(23, 162, 184, 0.65);
+            background: rgba(23, 162, 184, 0.08);
+        }
+
+        .calendar-day.performance-low {
+            border-color: rgba(255, 193, 7, 0.75);
+            background: rgba(255, 193, 7, 0.12);
+        }
+
+        .calendar-day.performance-loss {
+            border-color: rgba(220, 53, 69, 0.75);
+            background: rgba(220, 53, 69, 0.1);
+        }
+
+        .calendar-day.missing-close {
+            background: rgba(0, 0, 0, 0.025);
+            border-style: dashed;
+        }
+
         .calendar-day.today {
             box-shadow: inset 0 0 0 2px rgba(220, 20, 60, 0.25);
         }
@@ -1280,6 +1305,7 @@
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn btn-primary" id="newDailyCloseBtn">+ Novo Fechamento</button>
                         <button class="btn btn-secondary" onclick="copyLastClose()" title="Copiar dados do último fechamento">📋 Copiar Último</button>
+                        <button class="btn btn-secondary" onclick="fillCloseWith7DayAverage()" title="Preencher com a média dos últimos 7 fechamentos">📈 Média 7 Dias</button>
                         <button class="btn btn-success" onclick="showClosureStatsAlert()" title="Ver estatísticas dos últimos 30 dias">📊 Estatísticas</button>
                         <button class="btn btn-secondary" onclick="exportClosuresCSV()" title="Baixar todos os fechamentos em CSV">⬇️ Exportar</button>
                     </div>
@@ -1298,12 +1324,13 @@
                                     <th>Taxas</th>
                                     <th>Custos</th>
                                     <th>Lucro Líquido</th>
+                                    <th>Obs.</th>
                                     <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="dailyCloseTableBody">
                                 <tr>
-                                    <td colspan="8" class="text-center" style="color: var(--text-secondary); padding: 40px;">
+                                    <td colspan="9" class="text-center" style="color: var(--text-secondary); padding: 40px;">
                                         Nenhum fechamento registrado
                                     </td>
                                 </tr>
@@ -1490,9 +1517,21 @@
                         <div class="card-value" id="calendarMonthAverage">R$ 0,00</div>
                         <div class="card-subtext" id="calendarMonthRecordedDays">0 dias com fechamento</div>
                     </div>
+                    <div class="card">
+                        <div class="card-label">Cor dos Dias</div>
+                        <select id="calendarMetricMode" class="form-select" style="margin-top: 8px;">
+                            <option value="profit">Lucro</option>
+                            <option value="grossRevenue">Faturamento</option>
+                            <option value="orders">Pedidos</option>
+                            <option value="avgTicket">Ticket Médio</option>
+                        </select>
+                        <div class="card-subtext" style="margin-top: 8px;">Verde acima da média, vermelho abaixo</div>
+                    </div>
                 </div>
 
                 <div class="chart-container">
+                    <div class="chart-title">Desempenho por Dia</div>
+                    <div id="calendarLegend" class="card-subtext" style="margin-bottom: 12px;">Dias sem fechamento aparecem em cinza.</div>
                     <div class="calendar-grid" id="calendarGrid"></div>
                 </div>
 
@@ -1692,6 +1731,11 @@
                     </div>
                 </div>
 
+                <div class="chart-container mb-24">
+                    <div class="chart-title">🧭 Qualidade dos Dados</div>
+                    <div id="dataQualityContainer" class="insights-container"></div>
+                </div>
+
                 <div class="chart-container">
                     <div class="chart-title">ℹ️ Informações</div>
                     <div style="padding: 16px; background: var(--light-bg); border-radius: 8px;">
@@ -1741,6 +1785,12 @@
                     <label class="form-label">Custos (R$)</label>
                     <input type="number" id="closeCosts" class="form-input" step="0.01" required>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Observações do Dia</label>
+                    <textarea id="closeNotes" class="form-input" rows="3" placeholder="Ex.: chuva, promoção, feriado, movimento fraco, problema na operação..."></textarea>
+                    <small style="color: var(--text-secondary); display: block; margin-top: 4px;">Ajuda o app a explicar dias fora da curva.</small>
+                </div>
+                <div id="dailyCloseSmartHint" class="alert alert-info" style="display: none;"></div>
                 <button type="submit" class="btn btn-primary btn-block">Salvar Fechamento</button>
             </form>
         </div>
@@ -2029,7 +2079,7 @@
                 } else if (section === 'reports') {
                     // Initialize reports
                 } else if (section === 'settings') {
-                    // Settings page loaded
+                    renderDataQuality();
                 }
             });
         });
@@ -2085,6 +2135,91 @@
             // Sempre atualizar o campo líquido com o cálculo correto
             const netField = document.getElementById('closeNetRevenue');
             netField.value = calculated.toFixed(2);
+            updateDailyCloseSmartHint();
+        }
+
+        ['closeDate', 'closeOrders', 'closeCosts'].forEach((fieldId) => {
+            document.getElementById(fieldId).addEventListener('input', updateDailyCloseSmartHint);
+        });
+
+        function findCloseByDate(dateStr, ignoreId = null) {
+            return storage.getAll('dailyCloses').find(close => close.date === dateStr && close.id !== ignoreId);
+        }
+
+        function getPreviousWeekDate(dateStr) {
+            const date = new Date(dateStr + 'T00:00:00');
+            date.setDate(date.getDate() - 7);
+            return dateUtils.format(date);
+        }
+
+        function getDailyCloseDraft() {
+            const grossRevenue = parseFloat(document.getElementById('closeGrossRevenue').value) || 0;
+            const customFees = parseFloat(document.getElementById('closeCustomFees').value) || 0;
+            const netRevenue = grossRevenue - customFees;
+            const orders = parseInt(document.getElementById('closeOrders').value, 10) || 0;
+            const costs = parseFloat(document.getElementById('closeCosts').value) || 0;
+
+            return {
+                date: document.getElementById('closeDate').value,
+                grossRevenue,
+                customFees,
+                netRevenue,
+                orders,
+                costs,
+                profit: netRevenue - costs,
+                avgTicket: orders > 0 ? grossRevenue / orders : 0
+            };
+        }
+
+        function getCloseQualityMessages(draft) {
+            const messages = [];
+            const previousWeek = storage.getAll('dailyCloses').find(close => close.date === getPreviousWeekDate(draft.date));
+
+            if (draft.date && findCloseByDate(draft.date, editingClosureId)) {
+                messages.push('Já existe fechamento nessa data. Salvar assim criará outro registro para o mesmo dia.');
+            }
+
+            if (draft.grossRevenue > 0 && draft.customFees / draft.grossRevenue > 0.25) {
+                messages.push('Taxas acima de 25% do faturamento bruto. Vale revisar se o valor está correto.');
+            }
+
+            if (draft.profit < 0) {
+                messages.push('Lucro negativo neste fechamento. Confira custos, taxas e faturamento.');
+            }
+
+            if (draft.orders > 0 && draft.avgTicket < 10) {
+                messages.push('Ticket médio abaixo de R$ 10,00. Confira faturamento ou quantidade de pedidos.');
+            }
+
+            if (previousWeek) {
+                const prevProfit = (previousWeek.netRevenue || 0) - (previousWeek.costs || 0);
+                const grossDiff = previousWeek.grossRevenue ? ((draft.grossRevenue - previousWeek.grossRevenue) / previousWeek.grossRevenue * 100) : 0;
+                const profitDiff = prevProfit ? ((draft.profit - prevProfit) / Math.abs(prevProfit) * 100) : 0;
+                messages.push(`Mesmo dia da semana anterior: faturamento ${grossDiff >= 0 ? '+' : ''}${grossDiff.toFixed(1)}%, lucro ${profitDiff >= 0 ? '+' : ''}${profitDiff.toFixed(1)}%.`);
+            }
+
+            return messages;
+        }
+
+        function updateDailyCloseSmartHint() {
+            const hint = document.getElementById('dailyCloseSmartHint');
+            if (!hint) return;
+
+            const draft = getDailyCloseDraft();
+            if (!draft.date) {
+                hint.style.display = 'none';
+                return;
+            }
+
+            const messages = getCloseQualityMessages(draft);
+            if (messages.length === 0) {
+                hint.style.display = 'none';
+                return;
+            }
+
+            hint.className = messages.some(message => message.includes('negativo') || message.includes('Já existe')) ? 'alert alert-warning' : 'alert alert-info';
+            hint.style.display = 'block';
+            hint.innerHTML = messages.map(message => `<div>${escapeHTML(message)}</div>`).join('');
         }
 
         document.getElementById('dailyCloseForm').addEventListener('submit', (e) => {
@@ -2093,16 +2228,23 @@
             const customFees = parseFloat(document.getElementById('closeCustomFees').value) || 0;
             // Faturamento líquido é calculado como: bruto - taxas
             const netRevenue = grossRevenue - customFees;
+            const date = document.getElementById('closeDate').value;
+            const duplicateClose = findCloseByDate(date, editingClosureId);
+
+            if (duplicateClose && !confirm('Já existe um fechamento nessa data. Deseja salvar outro registro mesmo assim?')) {
+                return;
+            }
             
             const dailyClose = {
                 id: editingClosureId || Date.now(),
-                date: document.getElementById('closeDate').value,
+                date,
                 grossRevenue: grossRevenue,
                 netRevenue: netRevenue,
                 orders: parseInt(document.getElementById('closeOrders').value),
                 cmv: 0,
                 costs: parseFloat(document.getElementById('closeCosts').value),
-                customFees: customFees
+                customFees: customFees,
+                notes: document.getElementById('closeNotes').value.trim()
             };
             
             let dailyCloses = storage.getAll('dailyCloses');
@@ -2137,7 +2279,7 @@
             const tbody = document.getElementById('dailyCloseTableBody');
             
             if (dailyCloses.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: var(--text-secondary); padding: 40px;">Nenhum fechamento registrado</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="color: var(--text-secondary); padding: 40px;">Nenhum fechamento registrado</td></tr>';
                 return;
             }
 
@@ -2154,6 +2296,7 @@
                         <td>${formatCurrency(close.customFees || 0)}</td>
                         <td>${formatCurrency(close.costs)}</td>
                         <td style="font-weight: 600;" class="${profitClass}">${formatCurrency(netProfit)}</td>
+                        <td>${close.notes ? `<span title="${escapeHTML(close.notes)}">${escapeHTML(close.notes).slice(0, 36)}${close.notes.length > 36 ? '...' : ''}</span>` : '—'}</td>
                         <td style="display: flex; gap: 4px;">
                             <button class="btn btn-primary" style="padding: 6px 10px; font-size: 11px;" onclick="editDailyClose(${close.id})" title="Editar este fechamento">✏️</button>
                             <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 11px;" onclick="duplicateDailyClose(${close.id})" title="Duplicar para hoje">📋</button>
@@ -2178,6 +2321,7 @@
             document.getElementById('closeNetRevenue').value = close.netRevenue;
             document.getElementById('closeOrders').value = close.orders;
             document.getElementById('closeCosts').value = close.costs;
+            document.getElementById('closeNotes').value = close.notes || '';
             
             // Chamar calculateNetRevenue para sincronizar
             calculateNetRevenue();
@@ -2210,7 +2354,8 @@
                 orders: closeToDuplicate.orders,
                 cmv: closeToDuplicate.cmv,
                 costs: closeToDuplicate.costs,
-                customFees: closeToDuplicate.customFees || 0
+                customFees: closeToDuplicate.customFees || 0,
+                notes: closeToDuplicate.notes || ''
             };
             
             dailyCloses.push(newClose);
@@ -2240,10 +2385,42 @@
             document.getElementById('closeCustomFees').value = lastClose.customFees || 0;
             document.getElementById('closeOrders').value = lastClose.orders;
             document.getElementById('closeCosts').value = lastClose.costs;
+            document.getElementById('closeNotes').value = '';
             
             // Calcular faturamento líquido
             calculateNetRevenue();
             
+            openModal('dailyCloseModal');
+        }
+
+        function fillCloseWith7DayAverage() {
+            const dailyCloses = storage.getAll('dailyCloses')
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, 7);
+
+            if (dailyCloses.length === 0) {
+                alert('Ainda não há fechamentos suficientes para calcular média.');
+                return;
+            }
+
+            const average = dailyCloses.reduce((acc, close) => {
+                acc.grossRevenue += close.grossRevenue || 0;
+                acc.customFees += close.customFees || 0;
+                acc.orders += close.orders || 0;
+                acc.costs += close.costs || 0;
+                return acc;
+            }, { grossRevenue: 0, customFees: 0, orders: 0, costs: 0 });
+
+            editingClosureId = null;
+            document.getElementById('dailyCloseForm').reset();
+            document.getElementById('dailyCloseModalTitle').textContent = 'Novo Fechamento pela Média';
+            document.getElementById('closeDate').valueAsDate = new Date();
+            document.getElementById('closeGrossRevenue').value = (average.grossRevenue / dailyCloses.length).toFixed(2);
+            document.getElementById('closeCustomFees').value = (average.customFees / dailyCloses.length).toFixed(2);
+            document.getElementById('closeOrders').value = Math.round(average.orders / dailyCloses.length);
+            document.getElementById('closeCosts').value = (average.costs / dailyCloses.length).toFixed(2);
+            document.getElementById('closeNotes').value = `Preenchido com média dos últimos ${dailyCloses.length} fechamentos.`;
+            calculateNetRevenue();
             openModal('dailyCloseModal');
         }
 
@@ -2730,6 +2907,21 @@
             const monthProfit = monthCloses.reduce((sum, close) => sum + close.netRevenue - close.cmv - close.costs, 0);
             const monthMargin = monthNet > 0 ? (monthProfit / monthNet * 100) : 0;
             const monthAverage = monthCloses.length > 0 ? monthGross / monthCloses.length : 0;
+            const metricMode = document.getElementById('calendarMetricMode')?.value || 'profit';
+            const metricLabels = {
+                profit: 'Lucro',
+                grossRevenue: 'Faturamento',
+                orders: 'Pedidos',
+                avgTicket: 'Ticket Médio'
+            };
+            const metricValues = monthCloses.map(close => {
+                const profit = close.netRevenue - close.cmv - close.costs;
+                if (metricMode === 'grossRevenue') return close.grossRevenue;
+                if (metricMode === 'orders') return close.orders;
+                if (metricMode === 'avgTicket') return close.orders > 0 ? close.grossRevenue / close.orders : 0;
+                return profit;
+            });
+            const metricAverage = metricValues.length ? metricValues.reduce((sum, value) => sum + value, 0) / metricValues.length : 0;
 
             document.getElementById('calendarMonthGross').textContent = formatCurrency(monthGross);
             document.getElementById('calendarMonthOrders').textContent = `${monthOrders} pedidos`;
@@ -2738,6 +2930,9 @@
             document.getElementById('calendarMonthMargin').textContent = `Margem ${monthMargin.toFixed(1)}%`;
             document.getElementById('calendarMonthAverage').textContent = formatCurrency(monthAverage);
             document.getElementById('calendarMonthRecordedDays').textContent = `${monthCloses.length} dias com fechamento`;
+            document.getElementById('calendarLegend').textContent = monthCloses.length
+                ? `${metricLabels[metricMode]} médio em dias registrados: ${metricMode === 'orders' ? metricAverage.toFixed(1) + ' pedidos' : formatCurrency(metricAverage)}.`
+                : 'Dias sem fechamento aparecem em cinza.';
 
             const grid = document.getElementById('calendarGrid');
             let html = '';
@@ -2751,14 +2946,40 @@
                 const hasEvent = eventDates.includes(dateStr);
                 const close = closesByDate[dateStr];
                 const profit = close ? close.netRevenue - close.cmv - close.costs : 0;
+                const avgTicket = close && close.orders > 0 ? close.grossRevenue / close.orders : 0;
+                const selectedMetricValue = close
+                    ? metricMode === 'grossRevenue'
+                        ? close.grossRevenue
+                        : metricMode === 'orders'
+                            ? close.orders
+                            : metricMode === 'avgTicket'
+                                ? avgTicket
+                                : profit
+                    : 0;
+                let performanceClass = '';
+                if (close) {
+                    if (metricMode === 'profit' && selectedMetricValue < 0) {
+                        performanceClass = 'performance-loss';
+                    } else if (metricAverage > 0 && selectedMetricValue >= metricAverage * 1.15) {
+                        performanceClass = 'performance-strong';
+                    } else if (metricAverage > 0 && selectedMetricValue >= metricAverage * 0.85) {
+                        performanceClass = 'performance-good';
+                    } else {
+                        performanceClass = 'performance-low';
+                    }
+                }
                 const dayClasses = [
                     'calendar-day',
                     hasEvent ? 'has-event' : '',
                     close ? 'has-close' : '',
+                    close ? performanceClass : 'missing-close',
                     dateStr === todayStr ? 'today' : '',
                     isCurrentMonth ? '' : 'calendar-day-muted'
                 ].filter(Boolean).join(' ');
                 const dayNum = currentDate.getDate();
+                const metricDisplay = metricMode === 'orders'
+                    ? `${selectedMetricValue} ped.`
+                    : formatCurrency(selectedMetricValue);
 
                 html += `
                     <div class="${dayClasses}" 
@@ -2766,6 +2987,7 @@
                          onclick="${isCurrentMonth ? `showCalendarDayDetails('${dateStr}')` : ''}">
                         <div class="calendar-day-number">${dayNum}</div>
                         ${close ? `
+                            <div class="calendar-metric"><span>${metricLabels[metricMode]}</span><strong>${metricDisplay}</strong></div>
                             <div class="calendar-metric"><span>Fat.</span><strong>${formatCurrency(close.grossRevenue)}</strong></div>
                             <div class="calendar-metric calendar-profit-${profit >= 0 ? 'positive' : 'negative'}"><span>Lucro</span><strong>${formatCurrency(profit)}</strong></div>
                             <div class="calendar-metric"><span>Ped.</span><strong>${close.orders}</strong></div>
@@ -2854,6 +3076,10 @@
             currentCalendarMonth.setMonth(currentCalendarMonth.getMonth() + 1);
             renderCalendar();
             renderEventsTable();
+        });
+
+        document.getElementById('calendarMetricMode').addEventListener('change', () => {
+            renderCalendar();
         });
 
         function deleteEvent(id) {
@@ -4558,6 +4784,8 @@
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+            storage.set('lastBackupDate', dateUtils.format(new Date()));
+            renderDataQuality();
         }
 
         function exportAllData() {
@@ -4568,6 +4796,75 @@
 
         function importAllData() {
             document.getElementById('importFileInput').click();
+        }
+
+        function renderDataQuality() {
+            const container = document.getElementById('dataQualityContainer');
+            if (!container) return;
+
+            const dailyCloses = storage.getAll('dailyCloses');
+            const lastBackupDate = storage.get('lastBackupDate');
+            const today = dateUtils.today();
+            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const registeredDates = new Set(dailyCloses.map(close => close.date));
+            const dateCounts = dailyCloses.reduce((acc, close) => {
+                acc[close.date] = (acc[close.date] || 0) + 1;
+                return acc;
+            }, {});
+            const duplicatedDates = Object.entries(dateCounts).filter(([, count]) => count > 1);
+            const missingDates = [];
+
+            for (let day = 1; day <= today.getDate(); day++) {
+                const date = new Date(today.getFullYear(), today.getMonth(), day);
+                if (date < monthStart) continue;
+                const dateStr = dateUtils.format(date);
+                if (!registeredDates.has(dateStr)) missingDates.push(dateStr);
+            }
+
+            const oddCloses = dailyCloses.filter(close => {
+                const gross = close.grossRevenue || 0;
+                const fees = close.customFees || 0;
+                const profit = (close.netRevenue || 0) - (close.costs || 0);
+                return gross > 0 && (fees / gross > 0.25 || profit < 0);
+            });
+
+            const qualityItems = [
+                {
+                    type: duplicatedDates.length ? 'cmv' : 'goal',
+                    icon: duplicatedDates.length ? '⚠️' : '✅',
+                    text: duplicatedDates.length
+                        ? `${duplicatedDates.length} data(s) têm mais de um fechamento. Isso pode ser intencional, mas vale revisar.`
+                        : 'Nenhuma data duplicada nos fechamentos.'
+                },
+                {
+                    type: missingDates.length ? 'day' : 'goal',
+                    icon: missingDates.length ? '🧾' : '✅',
+                    text: missingDates.length
+                        ? `${missingDates.length} dia(s) deste mês ainda não têm fechamento.`
+                        : 'Todos os dias do mês até hoje têm fechamento.'
+                },
+                {
+                    type: lastBackupDate ? 'goal' : 'cmv',
+                    icon: lastBackupDate ? '💾' : '⚠️',
+                    text: lastBackupDate
+                        ? `Último backup baixado em ${dateUtils.formatBR(lastBackupDate)}.`
+                        : 'Nenhum backup registrado neste navegador. Baixe um backup para segurança.'
+                },
+                {
+                    type: oddCloses.length ? 'cmv' : 'goal',
+                    icon: oddCloses.length ? '🔎' : '✅',
+                    text: oddCloses.length
+                        ? `${oddCloses.length} fechamento(s) têm lucro negativo ou taxa acima de 25%.`
+                        : 'Nenhum fechamento fora da curva encontrado em lucro/taxas.'
+                }
+            ];
+
+            container.innerHTML = qualityItems.map(item => `
+                <div class="insight-item insight-${item.type}">
+                    <span class="insight-icon">${item.icon}</span>
+                    <span class="insight-text">${escapeHTML(item.text)}</span>
+                </div>
+            `).join('');
         }
 
         document.getElementById('importFileInput').addEventListener('change', (e) => {
@@ -4825,6 +5122,13 @@
             
             const remainingDays = daysInMonth - currentDay;
             const progressPercent = (currentDay / daysInMonth) * 100;
+            const grossNeededPerDay = metaGrossRevenue > currentGrossRevenue && remainingDays > 0
+                ? (metaGrossRevenue - currentGrossRevenue) / remainingDays
+                : 0;
+            const profitGoal = goals.profit || 0;
+            const profitNeededPerDay = profitGoal > currentProfit && remainingDays > 0
+                ? (profitGoal - currentProfit) / remainingDays
+                : 0;
             
             let html = `
                 <div class="projection-header">
@@ -4918,7 +5222,9 @@
                 </div>
                 
                 <div class="projection-advice">
-                    <p><strong>Análise:</strong> Com base na média dos ${monthData.length} dias registrados, você está projetado a atingir R$ ${projectedGrossRevenue.toFixed(2)} em faturamento bruto até o final do mês.</p>
+                    <p><strong>Análise:</strong> Com base na média dos ${monthData.length} dias registrados, você está projetado a atingir ${formatCurrency(projectedGrossRevenue)} em faturamento bruto até o final do mês.</p>
+                    <p style="margin-top: 8px;"><strong>Ritmo necessário:</strong> ${grossNeededPerDay > 0 ? `${formatCurrency(grossNeededPerDay)} de faturamento bruto por dia restante para bater a meta.` : 'A meta de faturamento já está batida ou não foi cadastrada.'}</p>
+                    <p style="margin-top: 8px;"><strong>Lucro necessário:</strong> ${profitNeededPerDay > 0 ? `${formatCurrency(profitNeededPerDay)} de lucro por dia restante para bater a meta.` : 'A meta de lucro já está batida ou não foi cadastrada.'}</p>
                 </div>
             `;
             
@@ -4928,7 +5234,7 @@
         function generateAutoInsights() {
             const dailyCloses = storage.getAll('dailyCloses') || [];
             const goals = storage.getAll('goals')[0] || {};
-            const products = storage.getAll('products') || [];
+            const expenses = storage.getAll('expenses') || [];
             
             if (dailyCloses.length === 0) {
                 document.getElementById('autoInsightsContainer').innerHTML = '<p class="empty-state">Registre dados para gerar insights automáticos.</p>';
@@ -4939,89 +5245,117 @@
             
             // Sort by date
             const sorted = [...dailyCloses].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const today = dateUtils.today();
+            const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            const currentMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            const monthData = sorted.filter(dc => dateUtils.isBetween(dc.date, currentMonthStart, currentMonthEnd));
+            const sumGross = (items) => items.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0);
+            const sumProfit = (items) => items.reduce((sum, dc) => sum + ((dc.netRevenue || 0) - (dc.costs || 0)), 0);
+            const sumOrders = (items) => items.reduce((sum, dc) => sum + (dc.orders || 0), 0);
+            const percentChange = (current, previous) => previous ? ((current - previous) / Math.abs(previous) * 100) : 0;
             
             // 1. Faturamento bruto (comparing last 7 days avg vs previous 7 days)
             if (sorted.length >= 14) {
                 const last7 = sorted.slice(-7);
                 const prev7 = sorted.slice(-14, -7);
                 
-                const avgLast7 = last7.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0) / 7;
-                const avgPrev7 = prev7.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0) / 7;
-                
-                const changePercent = ((avgLast7 - avgPrev7) / avgPrev7 * 100);
+                const avgLast7 = sumGross(last7) / 7;
+                const avgPrev7 = sumGross(prev7) / 7;
+                const changePercent = percentChange(avgLast7, avgPrev7);
                 if (Math.abs(changePercent) > 5) {
                     const trend = changePercent > 0 ? 'aumentou' : 'diminuiu';
                     insights.push({
                         type: 'revenue',
-                        icon: changePercent > 0 ? '📈' : '📉',
+                        icon: changePercent > 0 ? '📈' : '⚠️',
                         text: `Faturamento bruto ${trend} ${Math.abs(changePercent).toFixed(1)}% em relação à semana anterior.`
+                    });
+                }
+
+                const profitChange = percentChange(sumProfit(last7) / 7, sumProfit(prev7) / 7);
+                if (Math.abs(profitChange) > 5) {
+                    insights.push({
+                        type: profitChange > 0 ? 'goal' : 'cmv',
+                        icon: profitChange > 0 ? '✅' : '⚠️',
+                        text: `Lucro médio dos últimos 7 fechamentos ${profitChange > 0 ? 'subiu' : 'caiu'} ${Math.abs(profitChange).toFixed(1)}% vs. os 7 anteriores.`
                     });
                 }
             }
             
             // 2. Melhor dia da semana
-            const dayOfWeekTotals = {};
+            const dayOfWeekStats = {};
             const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
             
             sorted.forEach(dc => {
-                const day = new Date(dc.date).getDay();
-                if (!dayOfWeekTotals[day]) dayOfWeekTotals[day] = 0;
-                dayOfWeekTotals[day] += dc.grossRevenue || 0;
+                const day = new Date(dc.date + 'T00:00:00').getDay();
+                if (!dayOfWeekStats[day]) dayOfWeekStats[day] = { gross: 0, count: 0 };
+                dayOfWeekStats[day].gross += dc.grossRevenue || 0;
+                dayOfWeekStats[day].count += 1;
             });
             
-            let bestDay = Object.keys(dayOfWeekTotals).reduce((best, day) => 
-                dayOfWeekTotals[day] > dayOfWeekTotals[best] ? day : best
-            );
-            insights.push({
-                type: 'day',
-                icon: '📅',
-                text: `${dayNames[bestDay]} é seu melhor dia com média de R$ ${(dayOfWeekTotals[bestDay] / 4).toFixed(2)} em faturamento.`
-            });
+            const rankedDays = Object.entries(dayOfWeekStats)
+                .map(([day, data]) => ({ day, average: data.gross / data.count, count: data.count }))
+                .sort((a, b) => b.average - a.average);
+
+            if (rankedDays.length) {
+                insights.push({
+                    type: 'day',
+                    icon: '📅',
+                    text: `${dayNames[rankedDays[0].day]} é seu melhor dia registrado, com média de ${formatCurrency(rankedDays[0].average)} em faturamento.`
+                });
+            }
             
             // 3. Mudança no ticket médio
             if (sorted.length >= 14) {
                 const last7 = sorted.slice(-7);
                 const prev7 = sorted.slice(-14, -7);
                 
-                const avgTicketLast7 = last7.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0) / 
-                                       last7.reduce((sum, dc) => sum + (dc.orders || 0), 0);
-                const avgTicketPrev7 = prev7.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0) / 
-                                       prev7.reduce((sum, dc) => sum + (dc.orders || 0), 0);
+                const avgTicketLast7 = sumOrders(last7) > 0 ? sumGross(last7) / sumOrders(last7) : 0;
+                const avgTicketPrev7 = sumOrders(prev7) > 0 ? sumGross(prev7) / sumOrders(prev7) : 0;
                 
-                const ticketChange = ((avgTicketLast7 - avgTicketPrev7) / avgTicketPrev7 * 100);
+                const ticketChange = percentChange(avgTicketLast7, avgTicketPrev7);
                 if (Math.abs(ticketChange) > 5) {
                     const trend = ticketChange > 0 ? 'aumentou' : 'diminuiu';
                     insights.push({
                         type: 'ticket',
-                        icon: '🎟️',
-                        text: `Ticket médio ${trend} ${Math.abs(ticketChange).toFixed(1)}%. Agora em R$ ${avgTicketLast7.toFixed(2)}.`
+                        icon: ticketChange > 0 ? '🎟️' : '⚠️',
+                        text: `Ticket médio ${trend} ${Math.abs(ticketChange).toFixed(1)}%. Agora em ${formatCurrency(avgTicketLast7)}.`
                     });
                 }
             }
             
-            // 4. CMV Alto
-            const avgCMV = sorted.reduce((sum, dc) => sum + (dc.cmv || 0), 0) / sorted.length;
-            const lastDayCMV = sorted[sorted.length - 1].cmv || 0;
-            
-            if (lastDayCMV > avgCMV * 1.2) {
-                const excess = ((lastDayCMV - avgCMV) / avgCMV * 100);
+            // 4. Custos altos
+            const avgCosts = sorted.reduce((sum, dc) => sum + (dc.costs || 0), 0) / sorted.length;
+            const lastDayCosts = sorted[sorted.length - 1].costs || 0;
+            if (avgCosts > 0 && lastDayCosts > avgCosts * 1.2) {
+                const excess = ((lastDayCosts - avgCosts) / avgCosts * 100);
                 insights.push({
                     type: 'cmv',
                     icon: '⚠️',
-                    text: `CMV elevado no último dia: ${excess.toFixed(1)}% acima da média. Verifique os custos de produtos.`
+                    text: `Custos do último fechamento ficaram ${excess.toFixed(1)}% acima da média. Vale conferir se foi compra pontual ou erro de lançamento.`
                 });
+            }
+
+            const currentMonthExpenses = expenses.filter(e => dateUtils.isBetween(e.date, currentMonthStart, currentMonthEnd));
+            if (currentMonthExpenses.length) {
+                const expensesByCategory = currentMonthExpenses.reduce((acc, expense) => {
+                    const category = expense.category || 'other';
+                    acc[category] = (acc[category] || 0) + (expense.amount || 0);
+                    return acc;
+                }, {});
+                const topExpense = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1])[0];
+                if (topExpense) {
+                    insights.push({
+                        type: 'cmv',
+                        icon: '💸',
+                        text: `Maior categoria de despesa no mês: ${topExpense[0]} com ${formatCurrency(topExpense[1])}.`
+                    });
+                }
             }
             
             // 5. Previsão de meta
-            const now = new Date();
-            const currentMonth = sorted.filter(dc => {
-                const dcDate = new Date(dc.date);
-                return dcDate.getMonth() === now.getMonth() && dcDate.getFullYear() === now.getFullYear();
-            });
-            
-            if (currentMonth.length > 0) {
-                const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-                const avgDaily = currentMonth.reduce((sum, dc) => sum + (dc.grossRevenue || 0), 0) / currentMonth.length;
+            if (monthData.length > 0) {
+                const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+                const avgDaily = sumGross(monthData) / monthData.length;
                 const projected = avgDaily * daysInMonth;
                 const metaGross = goals.grossRevenue || 0;
                 
@@ -5048,6 +5382,31 @@
                     }
                 }
             }
+
+            // 6. Dias sem fechamento no mês
+            const registeredDates = new Set(monthData.map(dc => dc.date));
+            const missingDates = [];
+            for (let day = 1; day <= today.getDate(); day++) {
+                const date = new Date(today.getFullYear(), today.getMonth(), day);
+                const dateStr = dateUtils.format(date);
+                if (!registeredDates.has(dateStr)) missingDates.push(dateStr);
+            }
+            if (missingDates.length > 0) {
+                insights.push({
+                    type: 'day',
+                    icon: '🧾',
+                    text: `Há ${missingDates.length} dia(s) sem fechamento neste mês. Último pendente: ${dateUtils.formatBR(missingDates[missingDates.length - 1])}.`
+                });
+            }
+
+            const notedDays = sorted.filter(dc => dc.notes).slice(-3);
+            if (notedDays.length) {
+                insights.push({
+                    type: 'day',
+                    icon: '📝',
+                    text: `Última observação registrada: ${dateUtils.formatBR(notedDays[notedDays.length - 1].date)} - ${notedDays[notedDays.length - 1].notes}`
+                });
+            }
             
             // Render insights
             let html = '<div class="insights-container">';
@@ -5055,7 +5414,7 @@
                 html += `
                     <div class="insight-item insight-${insight.type}">
                         <span class="insight-icon">${insight.icon}</span>
-                        <span class="insight-text">${insight.text}</span>
+                        <span class="insight-text">${escapeHTML(insight.text)}</span>
                     </div>
                 `;
             });
