@@ -2115,6 +2115,12 @@
                     renderDREPage();
                 } else if (section === 'reports') {
                     // Initialize reports
+                } else if (section === 'advancedGoalsSection') {
+                    renderAdvancedGoals();
+                } else if (section === 'monthlyProjectionSection') {
+                    renderMonthlyProjection();
+                } else if (section === 'insightsSection') {
+                    generateAutoInsights();
                 } else if (section === 'settings') {
                     renderDataQuality();
                 }
@@ -5703,12 +5709,11 @@
         }
 
         // ============ CALL NEW FUNCTIONS WHEN SECTIONS ARE SHOWN ============
-        const originalShowSection = window.showSection || function() {};
         window.showSection = function(sectionId) {
             const sections = document.querySelectorAll('.section');
-            sections.forEach(s => s.style.display = 'none');
+            sections.forEach(s => s.classList.remove('active'));
             const section = document.getElementById(sectionId);
-            if (section) section.style.display = 'block';
+            if (section) section.classList.add('active');
             
             // Update navigation
             document.querySelectorAll('.nav-link').forEach(link => {
