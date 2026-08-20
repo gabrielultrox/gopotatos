@@ -238,6 +238,14 @@
             color: var(--primary-red);
         }
 
+        .card-value.positive {
+            color: var(--success);
+        }
+
+        .card-value.negative {
+            color: var(--danger);
+        }
+
         .card-subtext {
             font-size: 12px;
             color: var(--text-secondary);
@@ -533,16 +541,18 @@
         }
 
         .calendar-day {
-            aspect-ratio: 1;
+            min-height: 112px;
             border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 8px;
-            text-align: center;
             font-size: 12px;
             cursor: pointer;
             transition: all 0.3s ease;
             background: var(--card-bg);
             position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
 
         .calendar-day:hover {
@@ -553,6 +563,59 @@
         .calendar-day.has-event {
             background: var(--light-bg);
             border-color: var(--primary-red);
+        }
+
+        .calendar-day.has-close {
+            border-color: rgba(40, 167, 69, 0.4);
+            background: rgba(40, 167, 69, 0.04);
+        }
+
+        .calendar-day.today {
+            box-shadow: inset 0 0 0 2px rgba(220, 20, 60, 0.25);
+        }
+
+        .calendar-day-number {
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .calendar-day-muted .calendar-day-number,
+        .calendar-day-muted .calendar-metric {
+            color: var(--text-secondary);
+        }
+
+        .calendar-metric {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .calendar-metric span:first-child {
+            color: var(--text-secondary);
+        }
+
+        .calendar-metric strong {
+            color: var(--text-primary);
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .calendar-profit-positive strong {
+            color: var(--success);
+        }
+
+        .calendar-profit-negative strong {
+            color: var(--danger);
+        }
+
+        .calendar-event-label {
+            margin-top: auto;
+            font-size: 10px;
+            color: var(--primary-red);
+            font-weight: 600;
         }
 
         .calendar-day.has-event::before {
@@ -1411,6 +1474,21 @@
                             <button class="btn btn-secondary" id="prevMonth">← Anterior</button>
                             <button class="btn btn-secondary" id="nextMonth">Próximo →</button>
                         </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Faturamento do Mês</div>
+                        <div class="card-value red" id="calendarMonthGross">R$ 0,00</div>
+                        <div class="card-subtext" id="calendarMonthOrders">0 pedidos</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Lucro do Mês</div>
+                        <div class="card-value" id="calendarMonthProfit">R$ 0,00</div>
+                        <div class="card-subtext" id="calendarMonthMargin">Margem 0%</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Média por Dia Registrado</div>
+                        <div class="card-value" id="calendarMonthAverage">R$ 0,00</div>
+                        <div class="card-subtext" id="calendarMonthRecordedDays">0 dias com fechamento</div>
                     </div>
                 </div>
 
@@ -2581,8 +2659,50 @@
 
             const events = storage.getAll('events');
             const eventDates = events.map(e => e.date);
+            const dailyCloses = storage.getAll('dailyCloses');
+            const closesByDate = dailyCloses.reduce((map, close) => {
+                if (!map[close.date]) {
+                    map[close.date] = {
+                        date: close.date,
+                        grossRevenue: 0,
+                        netRevenue: 0,
+                        orders: 0,
+                        cmv: 0,
+                        costs: 0,
+                        fees: 0
+                    };
+                }
+
+                map[close.date].grossRevenue += close.grossRevenue || 0;
+                map[close.date].netRevenue += close.netRevenue || 0;
+                map[close.date].orders += close.orders || 0;
+                map[close.date].cmv += close.cmv || 0;
+                map[close.date].costs += close.costs || 0;
+                map[close.date].fees += close.customFees || 0;
+                return map;
+            }, {});
+            const monthCloses = Object.values(closesByDate).filter(close => {
+                const closeDate = new Date(close.date + 'T00:00:00');
+                return closeDate.getFullYear() === year && closeDate.getMonth() === month;
+            });
+            const monthGross = monthCloses.reduce((sum, close) => sum + close.grossRevenue, 0);
+            const monthNet = monthCloses.reduce((sum, close) => sum + close.netRevenue, 0);
+            const monthOrders = monthCloses.reduce((sum, close) => sum + close.orders, 0);
+            const monthProfit = monthCloses.reduce((sum, close) => sum + close.netRevenue - close.cmv - close.costs, 0);
+            const monthMargin = monthNet > 0 ? (monthProfit / monthNet * 100) : 0;
+            const monthAverage = monthCloses.length > 0 ? monthGross / monthCloses.length : 0;
+
+            document.getElementById('calendarMonthGross').textContent = formatCurrency(monthGross);
+            document.getElementById('calendarMonthOrders').textContent = `${monthOrders} pedidos`;
+            document.getElementById('calendarMonthProfit').textContent = formatCurrency(monthProfit);
+            document.getElementById('calendarMonthProfit').className = `card-value ${monthProfit < 0 ? 'negative' : 'positive'}`;
+            document.getElementById('calendarMonthMargin').textContent = `Margem ${monthMargin.toFixed(1)}%`;
+            document.getElementById('calendarMonthAverage').textContent = formatCurrency(monthAverage);
+            document.getElementById('calendarMonthRecordedDays').textContent = `${monthCloses.length} dias com fechamento`;
+
             const grid = document.getElementById('calendarGrid');
             let html = '';
+            const todayStr = dateUtils.format(new Date());
 
             for (let i = 0; i < 42; i++) {
                 const currentDate = new Date(startDate);
@@ -2590,13 +2710,28 @@
                 const isCurrentMonth = currentDate.getMonth() === month;
                 const dateStr = dateUtils.format(currentDate);
                 const hasEvent = eventDates.includes(dateStr);
+                const close = closesByDate[dateStr];
+                const profit = close ? close.netRevenue - close.cmv - close.costs : 0;
+                const dayClasses = [
+                    'calendar-day',
+                    hasEvent ? 'has-event' : '',
+                    close ? 'has-close' : '',
+                    dateStr === todayStr ? 'today' : '',
+                    isCurrentMonth ? '' : 'calendar-day-muted'
+                ].filter(Boolean).join(' ');
                 const dayNum = currentDate.getDate();
 
                 html += `
-                    <div class="calendar-day ${hasEvent ? 'has-event' : ''}" 
+                    <div class="${dayClasses}" 
                          style="opacity: ${isCurrentMonth ? 1 : 0.5}; cursor: ${isCurrentMonth ? 'pointer' : 'default'};"
-                         onclick="${isCurrentMonth ? `newEventForDate('${dateStr}')` : ''}">
-                        ${dayNum}
+                         onclick="${isCurrentMonth ? `showCalendarDayDetails('${dateStr}')` : ''}">
+                        <div class="calendar-day-number">${dayNum}</div>
+                        ${close ? `
+                            <div class="calendar-metric"><span>Fat.</span><strong>${formatCurrency(close.grossRevenue)}</strong></div>
+                            <div class="calendar-metric calendar-profit-${profit >= 0 ? 'positive' : 'negative'}"><span>Lucro</span><strong>${formatCurrency(profit)}</strong></div>
+                            <div class="calendar-metric"><span>Ped.</span><strong>${close.orders}</strong></div>
+                        ` : '<div class="calendar-metric"><span>Sem fechamento</span></div>'}
+                        ${hasEvent ? '<div class="calendar-event-label">Evento</div>' : ''}
                     </div>
                 `;
             }
@@ -2604,9 +2739,43 @@
             grid.innerHTML = html;
         }
 
+        function showCalendarDayDetails(dateStr) {
+            const closes = storage.getAll('dailyCloses').filter(close => close.date === dateStr);
+            const events = storage.getAll('events').filter(event => event.date === dateStr);
+
+            if (closes.length === 0 && events.length === 0) {
+                if (confirm(`Nenhum fechamento ou evento em ${dateUtils.formatBR(dateStr)}. Deseja criar um evento para este dia?`)) {
+                    newEventForDate(dateStr);
+                }
+                return;
+            }
+
+            const totals = closes.reduce((acc, close) => {
+                acc.grossRevenue += close.grossRevenue || 0;
+                acc.netRevenue += close.netRevenue || 0;
+                acc.orders += close.orders || 0;
+                acc.cmv += close.cmv || 0;
+                acc.costs += close.costs || 0;
+                acc.fees += close.customFees || 0;
+                return acc;
+            }, { grossRevenue: 0, netRevenue: 0, orders: 0, cmv: 0, costs: 0, fees: 0 });
+            const profit = totals.netRevenue - totals.cmv - totals.costs;
+            const margin = totals.netRevenue > 0 ? (profit / totals.netRevenue * 100) : 0;
+            const eventText = events.length
+                ? `\nEventos:\n${events.map(event => `- ${event.title}${event.description ? `: ${event.description}` : ''}`).join('\n')}`
+                : '';
+            const closeText = closes.length
+                ? `Faturamento bruto: ${formatCurrency(totals.grossRevenue)}\nFaturamento líquido: ${formatCurrency(totals.netRevenue)}\nLucro: ${formatCurrency(profit)}\nMargem: ${margin.toFixed(1)}%\nPedidos: ${totals.orders}\nCMV: ${formatCurrency(totals.cmv)}\nCustos: ${formatCurrency(totals.costs)}\nTaxas: ${formatCurrency(totals.fees)}`
+                : 'Sem fechamento registrado.';
+
+            if (confirm(`${dateUtils.formatBR(dateStr)}\n\n${closeText}${eventText}\n\nDeseja criar um evento para este dia?`)) {
+                newEventForDate(dateStr);
+            }
+        }
+
         function newEventForDate(dateStr) {
-            document.getElementById('eventDate').value = dateStr;
             document.getElementById('eventForm').reset();
+            document.getElementById('eventDate').value = dateStr;
             openModal('eventModal');
         }
 
