@@ -1501,6 +1501,12 @@
                                 <span>Insights</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-section="aiHelperSection">
+                                <span class="nav-link-icon">🤖</span>
+                                <span>Helper IA</span>
+                            </a>
+                        </li>
                     </ul>
                 </li>
 
@@ -2114,6 +2120,46 @@
                 <div id="autoInsightsContainer"></div>
             </section>
 
+            <!-- AI HELPER SECTION -->
+            <section class="section" id="aiHelperSection">
+                <div class="header">
+                    <div>
+                        <h1 class="page-title">Helper IA</h1>
+                        <p style="color: var(--text-secondary); margin-top: 6px;">
+                            Pergunte sobre faturamento, lucro, dias da semana, despesas, taxas, metas e tendências.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="ai-helper-shell">
+                    <div class="ai-helper-hero">
+                        <div class="ai-helper-avatar">🤖</div>
+                        <div>
+                            <h2>Analista do Pulse</h2>
+                            <p>Eu leio seus fechamentos, despesas e metas locais para responder com números reais do app.</p>
+                        </div>
+                    </div>
+
+                    <div class="ai-helper-examples" id="aiHelperExamples">
+                        <button type="button" class="ai-example-chip" data-question="Qual é o pior dia da semana?">Pior dia da semana</button>
+                        <button type="button" class="ai-example-chip" data-question="Qual é o melhor dia da semana?">Melhor dia da semana</button>
+                        <button type="button" class="ai-example-chip" data-question="Qual foi o pior dia cadastrado?">Pior dia cadastrado</button>
+                        <button type="button" class="ai-example-chip" data-question="Como está meu lucro este mês?">Lucro do mês</button>
+                        <button type="button" class="ai-example-chip" data-question="Qual despesa mais pesa?">Maior despesa</button>
+                        <button type="button" class="ai-example-chip" data-question="O que devo melhorar?">O que melhorar</button>
+                    </div>
+
+                    <div class="ai-helper-input-row">
+                        <textarea id="aiHelperQuestion" class="form-input ai-helper-input" rows="3" placeholder="Ex: qual é o pior dia da semana?"></textarea>
+                        <button type="button" class="btn btn-primary" id="askAiHelperBtn">Perguntar</button>
+                    </div>
+
+                    <div id="aiHelperAnswer" class="ai-helper-answer">
+                        <div class="empty-state">Faça uma pergunta ou toque em uma sugestão acima.</div>
+                    </div>
+                </div>
+            </section>
+
             <!-- REPORTS SECTION -->
             <section class="section" id="reports">
                 <div class="header">
@@ -2570,6 +2616,8 @@
                     renderMonthlyProjection();
                 } else if (section === 'insightsSection') {
                     generateAutoInsights();
+                } else if (section === 'aiHelperSection') {
+                    renderAIHelperWelcome();
                 } else if (section === 'settings') {
                     renderDataQuality();
                 }
@@ -6219,6 +6267,359 @@
             document.getElementById('autoInsightsContainer').innerHTML = html;
         }
 
+        // ============ AI HELPER ============
+        const AI_HELPER_WEEKDAYS = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+        function normalizeAIText(text) {
+            return String(text || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^\w\s]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function getCloseProfit(close) {
+            return (close.netRevenue || 0) - (close.costs || 0);
+        }
+
+        function getCloseTicket(close) {
+            return (close.orders || 0) > 0 ? (close.grossRevenue || 0) / close.orders : 0;
+        }
+
+        function getAIHelperData() {
+            const dailyCloses = (storage.getAll('dailyCloses') || [])
+                .filter(close => close && close.date)
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+            const expenses = storage.getAll('expenses') || [];
+            const goals = getAdvancedGoalsConfig ? getAdvancedGoalsConfig() : {};
+            return { dailyCloses, expenses, goals };
+        }
+
+        function summarizeCloses(closes) {
+            const totalGross = closes.reduce((sum, close) => sum + (close.grossRevenue || 0), 0);
+            const totalNet = closes.reduce((sum, close) => sum + (close.netRevenue || 0), 0);
+            const totalFees = closes.reduce((sum, close) => sum + (close.customFees || 0), 0);
+            const totalCosts = closes.reduce((sum, close) => sum + (close.costs || 0), 0);
+            const totalOrders = closes.reduce((sum, close) => sum + (close.orders || 0), 0);
+            const profit = totalNet - totalCosts;
+            return {
+                count: closes.length,
+                totalGross,
+                totalNet,
+                totalFees,
+                totalCosts,
+                totalOrders,
+                profit,
+                avgGross: closes.length ? totalGross / closes.length : 0,
+                avgProfit: closes.length ? profit / closes.length : 0,
+                avgTicket: totalOrders > 0 ? totalGross / totalOrders : 0,
+                feeRate: totalGross > 0 ? totalFees / totalGross * 100 : 0,
+                margin: totalNet > 0 ? profit / totalNet * 100 : 0
+            };
+        }
+
+        function getWeekdayStats(dailyCloses) {
+            const stats = AI_HELPER_WEEKDAYS.map((name, index) => ({
+                index,
+                name,
+                closes: [],
+                summary: summarizeCloses([])
+            }));
+
+            dailyCloses.forEach(close => {
+                const weekday = new Date(close.date + 'T00:00:00').getDay();
+                stats[weekday].closes.push(close);
+            });
+
+            stats.forEach(item => {
+                item.summary = summarizeCloses(item.closes);
+            });
+
+            return stats.filter(item => item.closes.length > 0);
+        }
+
+        function getMonthStats(dailyCloses) {
+            const months = {};
+            dailyCloses.forEach(close => {
+                const monthKey = String(close.date).slice(0, 7);
+                if (!months[monthKey]) months[monthKey] = [];
+                months[monthKey].push(close);
+            });
+
+            return Object.entries(months).map(([month, closes]) => ({
+                month,
+                label: new Date(`${month}-01T00:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+                closes,
+                summary: summarizeCloses(closes)
+            })).sort((a, b) => a.month.localeCompare(b.month));
+        }
+
+        function getExpenseStats(expenses) {
+            const byCategory = {};
+            expenses.forEach(expense => {
+                const category = expense.category || 'Sem categoria';
+                byCategory[category] = (byCategory[category] || 0) + (expense.amount || 0);
+            });
+
+            const categories = Object.entries(byCategory)
+                .map(([category, amount]) => ({ category, amount }))
+                .sort((a, b) => b.amount - a.amount);
+
+            const total = categories.reduce((sum, item) => sum + item.amount, 0);
+            return { categories, total };
+        }
+
+        function formatAIHelperAnswer(title, answer, facts = [], recommendation = '') {
+            const factsHtml = facts.length
+                ? `<ul class="ai-helper-facts">${facts.map(fact => `<li>${escapeHTML(fact)}</li>`).join('')}</ul>`
+                : '';
+            const recommendationHtml = recommendation
+                ? `<div class="ai-helper-recommendation"><strong>Próximo passo:</strong> ${escapeHTML(recommendation)}</div>`
+                : '';
+
+            return `
+                <div class="ai-helper-card">
+                    <div class="ai-helper-card-title">${escapeHTML(title)}</div>
+                    <div class="ai-helper-main-answer">${escapeHTML(answer)}</div>
+                    ${factsHtml}
+                    ${recommendationHtml}
+                </div>
+            `;
+        }
+
+        function buildAIHelperFallback(question, data) {
+            const { dailyCloses, expenses } = data;
+            const summary = summarizeCloses(dailyCloses);
+            const expenseStats = getExpenseStats(expenses);
+            return formatAIHelperAnswer(
+                'Resumo inteligente',
+                `Encontrei ${dailyCloses.length} fechamento(s) e ${expenses.length} despesa(s). Posso responder melhor se você perguntar sobre dia da semana, lucro, faturamento, taxas, ticket médio, despesas ou metas.`,
+                [
+                    `Faturamento bruto total: ${formatCurrency(summary.totalGross)}`,
+                    `Lucro estimado nos fechamentos: ${formatCurrency(summary.profit)}`,
+                    `Ticket médio geral: ${formatCurrency(summary.avgTicket)}`,
+                    `Despesas cadastradas: ${formatCurrency(expenseStats.total)}`
+                ],
+                'Experimente: “qual é o pior dia da semana?”, “qual despesa mais pesa?” ou “o que devo melhorar?”.'
+            );
+        }
+
+        function generateAIHelperAnswer(question) {
+            const data = getAIHelperData();
+            const { dailyCloses, expenses, goals } = data;
+            const normalized = normalizeAIText(question);
+
+            if (!normalized) {
+                return formatAIHelperAnswer(
+                    'Faça uma pergunta',
+                    'Digite uma pergunta sobre seus dados. Eu consigo analisar fechamentos, dias da semana, despesas, lucro, ticket médio, taxas e metas.',
+                    [],
+                    'Comece por “qual é o pior dia da semana?”.'
+                );
+            }
+
+            if (dailyCloses.length === 0) {
+                return formatAIHelperAnswer(
+                    'Ainda faltam dados',
+                    'Ainda não existe fechamento diário suficiente para responder com números reais.',
+                    [],
+                    'Cadastre alguns fechamentos na aba “Fechamento do Dia” e volte aqui.'
+                );
+            }
+
+            const wantsWorst = /\bpior|menor|fraco|ruim|baixo|queda/.test(normalized);
+            const wantsBest = /\bmelhor|maior|forte|bom|recorde/.test(normalized);
+            const wantsWeekday = /dia da semana|semana|segunda|terca|quarta|quinta|sexta|sabado|domingo/.test(normalized);
+            const wantsProfit = /lucro|margem|resultado/.test(normalized);
+            const wantsRevenue = /faturamento|receita|venda/.test(normalized);
+            const wantsExpense = /despesa|gasto|custo fixo|categoria/.test(normalized);
+            const wantsFees = /taxa|ifood|plataforma|comissao/.test(normalized);
+            const wantsTicket = /ticket|pedido medio|media por pedido/.test(normalized);
+            const wantsMonth = /mes|mensal|projecao|meta/.test(normalized);
+            const wantsImprove = /melhorar|sugestao|recomenda|ajuda|problema|prioridade|fazer/.test(normalized);
+
+            if (wantsWeekday) {
+                const weekdayStats = getWeekdayStats(dailyCloses);
+                const metric = wantsProfit ? 'avgProfit' : 'avgGross';
+                const sorted = [...weekdayStats].sort((a, b) => a.summary[metric] - b.summary[metric]);
+                const selected = wantsBest ? sorted[sorted.length - 1] : sorted[0];
+                const best = sorted[sorted.length - 1];
+                const worst = sorted[0];
+                const metricLabel = wantsProfit ? 'lucro médio' : 'faturamento médio';
+                const title = wantsBest ? 'Melhor dia da semana' : 'Pior dia da semana';
+                const answer = `${selected.name} é ${wantsBest ? 'o melhor' : 'o pior'} dia da semana por ${metricLabel}: ${formatCurrency(selected.summary[metric])}.`;
+                return formatAIHelperAnswer(title, answer, [
+                    `${selected.name}: ${selected.summary.count} fechamento(s), faturamento total ${formatCurrency(selected.summary.totalGross)}, lucro total ${formatCurrency(selected.summary.profit)}.`,
+                    `Melhor referência: ${best.name} com ${formatCurrency(best.summary[metric])} de ${metricLabel}.`,
+                    `Pior referência: ${worst.name} com ${formatCurrency(worst.summary[metric])} de ${metricLabel}.`
+                ], selected.summary.count < 3
+                    ? 'Ainda há poucos registros nesse dia; use como sinal inicial, não como verdade absoluta.'
+                    : `Compare promoções, equipe, clima, horário e observações dos fechamentos de ${selected.name}.`);
+            }
+
+            if ((wantsWorst || wantsBest) && (wantsProfit || wantsRevenue || normalized.includes('dia'))) {
+                const metric = wantsProfit ? getCloseProfit : (close => close.grossRevenue || 0);
+                const sorted = [...dailyCloses].sort((a, b) => metric(a) - metric(b));
+                const selected = wantsBest ? sorted[sorted.length - 1] : sorted[0];
+                const weekday = AI_HELPER_WEEKDAYS[new Date(selected.date + 'T00:00:00').getDay()];
+                const metricLabel = wantsProfit ? 'lucro' : 'faturamento';
+                return formatAIHelperAnswer(
+                    wantsBest ? 'Melhor dia cadastrado' : 'Pior dia cadastrado',
+                    `${dateUtils.formatBR(selected.date)} (${weekday}) foi o ${wantsBest ? 'melhor' : 'pior'} dia por ${metricLabel}: ${formatCurrency(metric(selected))}.`,
+                    [
+                        `Faturamento bruto: ${formatCurrency(selected.grossRevenue || 0)}`,
+                        `Faturamento líquido: ${formatCurrency(selected.netRevenue || 0)}`,
+                        `Custos do fechamento: ${formatCurrency(selected.costs || 0)}`,
+                        `Pedidos: ${selected.orders || 0}`,
+                        `Ticket médio: ${formatCurrency(getCloseTicket(selected))}`
+                    ],
+                    selected.notes ? `Veja a observação desse dia: “${selected.notes}”.` : 'Se esse dia teve algum motivo especial, registre nas observações para eu explicar melhor nas próximas análises.'
+                );
+            }
+
+            if (wantsExpense) {
+                const expenseStats = getExpenseStats(expenses);
+                if (!expenseStats.categories.length) {
+                    return formatAIHelperAnswer('Despesas', 'Ainda não há despesas cadastradas para analisar.', [], 'Cadastre despesas por categoria para eu apontar onde o dinheiro está saindo.');
+                }
+                const top = expenseStats.categories[0];
+                const percent = expenseStats.total > 0 ? top.amount / expenseStats.total * 100 : 0;
+                return formatAIHelperAnswer(
+                    'Maior peso nas despesas',
+                    `${top.category} é a categoria que mais pesa: ${formatCurrency(top.amount)}, equivalente a ${percent.toFixed(1)}% das despesas cadastradas.`,
+                    expenseStats.categories.slice(0, 5).map(item => `${item.category}: ${formatCurrency(item.amount)}`),
+                    'Comece revisando essa categoria antes de tentar cortar gastos pequenos espalhados.'
+                );
+            }
+
+            if (wantsFees) {
+                const summary = summarizeCloses(dailyCloses);
+                const worstFeeDay = [...dailyCloses].sort((a, b) => {
+                    const rateA = (a.grossRevenue || 0) > 0 ? (a.customFees || 0) / a.grossRevenue : 0;
+                    const rateB = (b.grossRevenue || 0) > 0 ? (b.customFees || 0) / b.grossRevenue : 0;
+                    return rateB - rateA;
+                })[0];
+                const worstRate = worstFeeDay && (worstFeeDay.grossRevenue || 0) > 0 ? (worstFeeDay.customFees || 0) / worstFeeDay.grossRevenue * 100 : 0;
+                return formatAIHelperAnswer(
+                    'Taxas de plataforma',
+                    `As taxas registradas somam ${formatCurrency(summary.totalFees)}, média de ${summary.feeRate.toFixed(1)}% sobre o faturamento bruto.`,
+                    [
+                        `Faturamento bruto analisado: ${formatCurrency(summary.totalGross)}`,
+                        `Dia com maior peso de taxa: ${dateUtils.formatBR(worstFeeDay.date)} (${worstRate.toFixed(1)}%)`,
+                        `Taxa nesse dia: ${formatCurrency(worstFeeDay.customFees || 0)}`
+                    ],
+                    'Se a taxa passar muito de 20% com frequência, vale separar venda direta, iFood e promoções para enxergar melhor a margem.'
+                );
+            }
+
+            if (wantsTicket) {
+                const summary = summarizeCloses(dailyCloses);
+                const bestTicketDay = [...dailyCloses].sort((a, b) => getCloseTicket(b) - getCloseTicket(a))[0];
+                return formatAIHelperAnswer(
+                    'Ticket médio',
+                    `Seu ticket médio geral é ${formatCurrency(summary.avgTicket)} por pedido.`,
+                    [
+                        `Pedidos analisados: ${summary.totalOrders}`,
+                        `Faturamento bruto analisado: ${formatCurrency(summary.totalGross)}`,
+                        `Melhor ticket registrado: ${dateUtils.formatBR(bestTicketDay.date)} com ${formatCurrency(getCloseTicket(bestTicketDay))}`
+                    ],
+                    'Para subir ticket, teste combos, adicionais e metas por pedido nos dias com bom volume.'
+                );
+            }
+
+            if (wantsMonth) {
+                const monthStats = getMonthStats(dailyCloses);
+                const currentMonthKey = dateUtils.format(dateUtils.today()).slice(0, 7);
+                const current = monthStats.find(item => item.month === currentMonthKey) || monthStats[monthStats.length - 1];
+                const bestMonth = [...monthStats].sort((a, b) => b.summary.totalGross - a.summary.totalGross)[0];
+                const goalGross = goals.grossRevenue || 0;
+                const goalProfit = goals.profit || 0;
+                const facts = [
+                    `${current.label}: faturamento ${formatCurrency(current.summary.totalGross)}, lucro ${formatCurrency(current.summary.profit)}, margem ${current.summary.margin.toFixed(1)}%.`,
+                    `Melhor mês cadastrado: ${bestMonth.label} com ${formatCurrency(bestMonth.summary.totalGross)}.`,
+                    `Dias cadastrados no mês analisado: ${current.summary.count}.`
+                ];
+                if (goalGross > 0) facts.push(`Meta de faturamento: ${formatCurrency(goalGross)} (${(current.summary.totalGross / goalGross * 100).toFixed(1)}% atingido).`);
+                if (goalProfit > 0) facts.push(`Meta de lucro: ${formatCurrency(goalProfit)} (${(current.summary.profit / goalProfit * 100).toFixed(1)}% atingido).`);
+
+                return formatAIHelperAnswer(
+                    'Leitura mensal',
+                    `No mês de ${current.label}, o lucro estimado está em ${formatCurrency(current.summary.profit)} e o faturamento em ${formatCurrency(current.summary.totalGross)}.`,
+                    facts,
+                    current.summary.margin < 15 ? 'A margem está apertada; priorize reduzir custos/taxas antes de buscar só mais vendas.' : 'A margem está saudável; agora o foco pode ser volume e constância.'
+                );
+            }
+
+            if (wantsImprove) {
+                const summary = summarizeCloses(dailyCloses);
+                const weekdayStats = getWeekdayStats(dailyCloses).sort((a, b) => a.summary.avgGross - b.summary.avgGross);
+                const expenseStats = getExpenseStats(expenses);
+                const weakestWeekday = weekdayStats[0];
+                const topExpense = expenseStats.categories[0];
+                const priorities = [];
+
+                if (summary.margin < 15) priorities.push(`Margem baixa: margem estimada de ${summary.margin.toFixed(1)}%.`);
+                if (summary.feeRate > 18) priorities.push(`Taxas altas: média de ${summary.feeRate.toFixed(1)}% sobre o bruto.`);
+                if (weakestWeekday) priorities.push(`Dia fraco: ${weakestWeekday.name} com média de ${formatCurrency(weakestWeekday.summary.avgGross)}.`);
+                if (topExpense) priorities.push(`Despesa mais pesada: ${topExpense.category} com ${formatCurrency(topExpense.amount)}.`);
+                if (summary.avgTicket > 0) priorities.push(`Ticket médio atual: ${formatCurrency(summary.avgTicket)}.`);
+
+                return formatAIHelperAnswer(
+                    'Prioridades de melhoria',
+                    'Minha leitura: ataque primeiro margem, taxas/despesas e o dia mais fraco. É aí que costuma estar o ganho mais rápido.',
+                    priorities,
+                    'Plano simples: 1) revisar preço/custo dos campeões de venda, 2) criar ação específica para o pior dia da semana, 3) acompanhar taxas separadas das despesas toda semana.'
+                );
+            }
+
+            return buildAIHelperFallback(question, data);
+        }
+
+        function askAIHelper(question = null) {
+            const input = document.getElementById('aiHelperQuestion');
+            const answer = document.getElementById('aiHelperAnswer');
+            if (!input || !answer) return;
+
+            const finalQuestion = question || input.value;
+            input.value = finalQuestion;
+            answer.innerHTML = `
+                <div class="ai-helper-question">${escapeHTML(finalQuestion || 'Pergunta')}</div>
+                ${generateAIHelperAnswer(finalQuestion)}
+            `;
+        }
+
+        function renderAIHelperWelcome() {
+            const answer = document.getElementById('aiHelperAnswer');
+            if (!answer || answer.dataset.ready === 'true') return;
+
+            const { dailyCloses } = getAIHelperData();
+            answer.dataset.ready = 'true';
+            answer.innerHTML = formatAIHelperAnswer(
+                'Pronto para analisar',
+                dailyCloses.length
+                    ? `Já tenho ${dailyCloses.length} fechamento(s) para consultar. Pode perguntar em linguagem normal.`
+                    : 'Ainda não há fechamentos cadastrados, mas a aba já está pronta para quando você registrar dados.',
+                [
+                    'Exemplos: pior dia da semana, melhor dia cadastrado, lucro do mês, maior despesa, ticket médio.',
+                    'As respostas usam os dados salvos localmente neste navegador.'
+                ],
+                'Para começar, toque em “Pior dia da semana”.'
+            );
+        }
+
+        document.getElementById('askAiHelperBtn')?.addEventListener('click', () => askAIHelper());
+        document.getElementById('aiHelperQuestion')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                askAIHelper();
+            }
+        });
+        document.querySelectorAll('.ai-example-chip').forEach(button => {
+            button.addEventListener('click', () => askAIHelper(button.dataset.question));
+        });
+
         // ============ CALL NEW FUNCTIONS WHEN SECTIONS ARE SHOWN ============
         window.showSection = function(sectionId) {
             const sections = document.querySelectorAll('.section');
@@ -6237,6 +6638,7 @@
             if (sectionId === 'advancedGoalsSection') renderAdvancedGoals();
             if (sectionId === 'monthlyProjectionSection') renderMonthlyProjection();
             if (sectionId === 'insightsSection') generateAutoInsights();
+            if (sectionId === 'aiHelperSection') renderAIHelperWelcome();
         };
 
         // ============ ADD CSS FOR NEW SECTIONS ============
@@ -6531,6 +6933,186 @@
                 padding: 40px 20px;
                 color: var(--text-secondary);
                 font-size: 14px;
+            }
+
+            .ai-helper-shell {
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 18px;
+                padding: 20px;
+                box-shadow: 0 14px 35px rgba(70, 42, 21, 0.08);
+            }
+
+            .ai-helper-hero {
+                display: flex;
+                gap: 14px;
+                align-items: center;
+                padding: 16px;
+                border-radius: 16px;
+                background: linear-gradient(135deg, rgba(200, 30, 58, 0.1), rgba(245, 185, 66, 0.18));
+                margin-bottom: 16px;
+            }
+
+            .ai-helper-avatar {
+                width: 52px;
+                height: 52px;
+                border-radius: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff;
+                font-size: 26px;
+                box-shadow: 0 10px 24px rgba(200, 30, 58, 0.14);
+            }
+
+            .ai-helper-hero h2 {
+                margin: 0 0 4px;
+                color: var(--brand-ink);
+                font-size: 18px;
+            }
+
+            .ai-helper-hero p {
+                margin: 0;
+                color: var(--text-secondary);
+                font-size: 13px;
+                line-height: 1.45;
+            }
+
+            .ai-helper-examples {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-bottom: 16px;
+            }
+
+            .ai-example-chip {
+                border: 1px solid rgba(200, 30, 58, 0.18);
+                background: #fff7ec;
+                color: var(--primary-red);
+                border-radius: 999px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .ai-example-chip:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 8px 18px rgba(200, 30, 58, 0.12);
+            }
+
+            .ai-helper-input-row {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                gap: 10px;
+                align-items: stretch;
+                margin-bottom: 16px;
+            }
+
+            .ai-helper-input {
+                resize: vertical;
+                min-height: 74px;
+            }
+
+            .ai-helper-answer {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .ai-helper-question {
+                align-self: flex-end;
+                max-width: 86%;
+                background: var(--primary-red);
+                color: #fff;
+                border-radius: 14px 14px 4px 14px;
+                padding: 10px 12px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+
+            .ai-helper-card {
+                border: 1px solid var(--border-color);
+                border-radius: 16px;
+                padding: 16px;
+                background: linear-gradient(180deg, #ffffff 0%, #fffaf4 100%);
+            }
+
+            .ai-helper-card-title {
+                font-size: 12px;
+                font-weight: 800;
+                color: var(--primary-red);
+                text-transform: uppercase;
+                letter-spacing: 0.7px;
+                margin-bottom: 8px;
+            }
+
+            .ai-helper-main-answer {
+                font-size: 16px;
+                line-height: 1.45;
+                color: var(--text-primary);
+                font-weight: 700;
+                margin-bottom: 12px;
+            }
+
+            .ai-helper-facts {
+                margin: 0 0 12px 18px;
+                color: var(--text-secondary);
+                font-size: 13px;
+                line-height: 1.5;
+            }
+
+            .ai-helper-recommendation {
+                border-left: 4px solid var(--brand-gold);
+                background: rgba(245, 185, 66, 0.14);
+                border-radius: 10px;
+                padding: 10px 12px;
+                font-size: 13px;
+                color: var(--text-primary);
+                line-height: 1.45;
+            }
+
+            @media (max-width: 768px) {
+                .ai-helper-shell {
+                    padding: 14px;
+                    border-radius: 14px;
+                }
+
+                .ai-helper-hero {
+                    align-items: flex-start;
+                    padding: 14px;
+                }
+
+                .ai-helper-avatar {
+                    width: 44px;
+                    height: 44px;
+                    border-radius: 14px;
+                    font-size: 22px;
+                }
+
+                .ai-helper-examples {
+                    flex-wrap: nowrap;
+                    overflow-x: auto;
+                    padding-bottom: 4px;
+                    scrollbar-width: none;
+                }
+
+                .ai-helper-examples::-webkit-scrollbar {
+                    display: none;
+                }
+
+                .ai-example-chip {
+                    flex: 0 0 auto;
+                }
+
+                .ai-helper-input-row {
+                    grid-template-columns: 1fr;
+                }
+
+                .ai-helper-question {
+                    max-width: 100%;
+                }
             }
         `;
         document.head.appendChild(styleSheet);
