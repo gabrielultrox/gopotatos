@@ -1269,14 +1269,19 @@
                         <div class="card-subtext" id="totalOrders">0 pedidos</div>
                     </div>
                     <div class="card">
-                        <div class="card-label">Despesas</div>
+                        <div class="card-label">Despesas Cadastradas</div>
                         <div class="card-value" id="totalExpenses">R$ 0,00</div>
-                        <div class="card-subtext">Todas as despesas do período</div>
+                        <div class="card-subtext">Somente lançamentos da aba Despesas</div>
                     </div>
                     <div class="card">
-                        <div class="card-label">Taxas (App)</div>
+                        <div class="card-label">Taxas da Plataforma</div>
                         <div class="card-value" id="totalFees">R$ 0,00</div>
-                        <div class="card-subtext">Taxa de plataforma</div>
+                        <div class="card-subtext">Somente taxas do fechamento</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-label">Custos do Fechamento</div>
+                        <div class="card-value" id="totalCloseCosts">R$ 0,00</div>
+                        <div class="card-subtext">Campo Custos do fechamento diário</div>
                     </div>
                     <div class="card">
                         <div class="card-label">Faturamento Médio Diário</div>
@@ -3255,7 +3260,7 @@
             const daysInRange = Math.floor((range.end - range.start) / (1000 * 60 * 60 * 24)) + 1;
             const avgDailyRevenue = grossRevenue / daysInRange;
 
-            const breakEven = costs + totalExpenses + (totalExpenses * 0.1);
+            const breakEven = costs + totalExpenses + totalFees;
             const profitMargin = netRevenue > 0 ? (profit / netRevenue * 100) : 0;
 
             return {
@@ -3264,6 +3269,7 @@
                 profit,
                 profitMargin,
                 cmv,
+                closeCosts: costs,
                 avgTicket,
                 totalOrders,
                 totalExpenses,
@@ -3683,7 +3689,8 @@
             document.getElementById('avgTicket').textContent = formatCurrency(metrics.avgTicket);
             document.getElementById('totalOrders').textContent = metrics.totalOrders + ' pedidos';
             document.getElementById('totalExpenses').textContent = formatCurrency(metrics.totalExpenses);
-            document.getElementById('totalFees').textContent = formatCurrency(Math.abs(metrics.fees));
+            document.getElementById('totalFees').textContent = formatCurrency(metrics.fees);
+            document.getElementById('totalCloseCosts').textContent = formatCurrency(metrics.closeCosts);
             document.getElementById('avgDailyRevenue').textContent = formatCurrency(metrics.avgDailyRevenue);
             document.getElementById('breakEven').textContent = formatCurrency(metrics.breakEven);
 
