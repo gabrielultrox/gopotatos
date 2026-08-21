@@ -1645,6 +1645,50 @@
             <section class="section" id="advancedGoalsSection">
                 <div class="header">
                     <h1 class="page-title">Metas Avançadas</h1>
+                    <button class="btn btn-primary" onclick="openAdvancedGoalsEditor()">Editar Metas</button>
+                </div>
+                <div class="chart-container mb-24" id="advancedGoalsEditor" style="display: none;">
+                    <div class="chart-title">Configurar Metas Mensais</div>
+                    <form id="advancedGoalsForm">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                            <div class="form-group">
+                                <label class="form-label">Faturamento Bruto (R$)</label>
+                                <input type="number" id="advancedGoalGrossRevenue" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Faturamento Líquido (R$)</label>
+                                <input type="number" id="advancedGoalNetRevenue" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Lucro (R$)</label>
+                                <input type="number" id="advancedGoalProfit" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Pedidos</label>
+                                <input type="number" id="advancedGoalOrders" class="form-input" step="1" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Ticket Médio (R$)</label>
+                                <input type="number" id="advancedGoalTicketAverage" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">CMV / Custos de Produto (R$)</label>
+                                <input type="number" id="advancedGoalCmv" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Despesas/Custos (R$)</label>
+                                <input type="number" id="advancedGoalCosts" class="form-input" step="0.01" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Margem de Lucro (%)</label>
+                                <input type="number" id="advancedGoalMargin" class="form-input" step="0.1" min="0">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                            <button type="submit" class="btn btn-primary">Salvar Metas Avançadas</button>
+                            <button type="button" class="btn btn-secondary" onclick="closeAdvancedGoalsEditor()">Cancelar</button>
+                        </div>
+                    </form>
                 </div>
                 <div id="advancedGoalsContainer"></div>
             </section>
@@ -4987,7 +5031,8 @@
                     inventory: storage.getAll('inventory'),
                     expenses: storage.getAll('expenses'),
                     goals: storage.getAll('goals'),
-                    events: storage.getAll('events')
+                    events: storage.getAll('events'),
+                    advancedGoalsConfig: storage.get('advancedGoalsConfig')
                 }
             };
         }
@@ -5156,6 +5201,7 @@
             if (Array.isArray(data.expenses)) storage.save('expenses', data.expenses);
             if (Array.isArray(data.goals)) storage.save('goals', data.goals);
             if (Array.isArray(data.events)) storage.save('events', data.events);
+            if (data.advancedGoalsConfig) storage.set('advancedGoalsConfig', data.advancedGoalsConfig);
 
             pendingImportData = null;
             closeModal('importPreviewModal');
@@ -5199,6 +5245,7 @@
                     storage.save('expenses', []);
                     storage.save('goals', []);
                     storage.save('events', []);
+                    storage.set('advancedGoalsConfig', null);
                     
                     alert('✅ Todos os dados foram deletados.');
                     location.reload();
@@ -5234,9 +5281,66 @@
         
 
         // ============ ADVANCED GOALS & PROJECTIONS ============
+
+        function getAdvancedGoalsConfig() {
+            const saved = storage.get('advancedGoalsConfig');
+            if (saved) return saved;
+
+            const legacyGoals = storage.getAll('goals')[0] || {};
+            return {
+                grossRevenue: legacyGoals.grossRevenue || 0,
+                netRevenue: legacyGoals.netRevenue || 0,
+                profit: legacyGoals.profit || 0,
+                orders: legacyGoals.orders || 0,
+                ticketAverage: legacyGoals.ticketAverage || 0,
+                cmv: legacyGoals.cmv || 0,
+                costs: legacyGoals.costs || 0,
+                margin: legacyGoals.margin || 0
+            };
+        }
+
+        function setAdvancedGoalsFormValues(goals) {
+            document.getElementById('advancedGoalGrossRevenue').value = goals.grossRevenue || '';
+            document.getElementById('advancedGoalNetRevenue').value = goals.netRevenue || '';
+            document.getElementById('advancedGoalProfit').value = goals.profit || '';
+            document.getElementById('advancedGoalOrders').value = goals.orders || '';
+            document.getElementById('advancedGoalTicketAverage').value = goals.ticketAverage || '';
+            document.getElementById('advancedGoalCmv').value = goals.cmv || '';
+            document.getElementById('advancedGoalCosts').value = goals.costs || '';
+            document.getElementById('advancedGoalMargin').value = goals.margin || '';
+        }
+
+        function openAdvancedGoalsEditor() {
+            setAdvancedGoalsFormValues(getAdvancedGoalsConfig());
+            document.getElementById('advancedGoalsEditor').style.display = 'block';
+        }
+
+        function closeAdvancedGoalsEditor() {
+            document.getElementById('advancedGoalsEditor').style.display = 'none';
+        }
+
+        document.getElementById('advancedGoalsForm').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const config = {
+                grossRevenue: toNumber(document.getElementById('advancedGoalGrossRevenue').value),
+                netRevenue: toNumber(document.getElementById('advancedGoalNetRevenue').value),
+                profit: toNumber(document.getElementById('advancedGoalProfit').value),
+                orders: toNumber(document.getElementById('advancedGoalOrders').value),
+                ticketAverage: toNumber(document.getElementById('advancedGoalTicketAverage').value),
+                cmv: toNumber(document.getElementById('advancedGoalCmv').value),
+                costs: toNumber(document.getElementById('advancedGoalCosts').value),
+                margin: toNumber(document.getElementById('advancedGoalMargin').value)
+            };
+
+            storage.set('advancedGoalsConfig', config);
+            closeAdvancedGoalsEditor();
+            renderAdvancedGoals();
+            renderMonthlyProjection();
+            alert('Metas avançadas salvas.');
+        });
         
         function renderAdvancedGoals() {
-            const goals = storage.getAll('goals')[0] || {};
+            const goals = getAdvancedGoalsConfig();
             const dailyCloses = storage.getAll('dailyCloses') || [];
             
             // Current month data
@@ -5362,7 +5466,7 @@
         
         function renderMonthlyProjection() {
             const dailyCloses = storage.getAll('dailyCloses') || [];
-            const goals = storage.getAll('goals')[0] || {};
+            const goals = getAdvancedGoalsConfig();
             
             const now = new Date();
             const currentYear = now.getFullYear();
