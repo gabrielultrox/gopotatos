@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoPotatos Manager - ERP Delivery</title>
+    <title>GoPotatos Pulse - Helper Financeiro</title>
     <style>
         * {
             margin: 0;
@@ -12,12 +12,17 @@
         }
 
         :root {
-            --primary-red: #DC143C;
-            --light-bg: #f8f9fa;
+            --primary-red: #c81e3a;
+            --brand-gold: #f5b942;
+            --brand-green: #1f8a5b;
+            --brand-ink: #24161a;
+            --soft-red: rgba(200, 30, 58, 0.1);
+            --soft-gold: rgba(245, 185, 66, 0.16);
+            --light-bg: #f7f5f2;
             --card-bg: #ffffff;
-            --border-color: #e9ecef;
-            --text-primary: #212529;
-            --text-secondary: #6c757d;
+            --border-color: #ebe4dc;
+            --text-primary: #24161a;
+            --text-secondary: #756b66;
             --success: #28a745;
             --warning: #ffc107;
             --danger: #dc3545;
@@ -26,7 +31,9 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background-color: var(--light-bg);
+            background:
+                radial-gradient(circle at top left, rgba(245, 185, 66, 0.16), transparent 30%),
+                linear-gradient(180deg, #fffaf4 0%, var(--light-bg) 42%);
             color: var(--text-primary);
             line-height: 1.6;
         }
@@ -39,12 +46,14 @@
         /* SIDEBAR */
         .sidebar {
             width: 280px;
-            background: var(--card-bg);
+            background:
+                linear-gradient(180deg, #fff 0%, #fffaf4 48%, #fff 100%);
             border-right: 1px solid var(--border-color);
             padding: 24px 0;
             position: fixed;
             height: 100vh;
             overflow-y: auto;
+            box-shadow: 12px 0 32px rgba(36, 22, 26, 0.04);
         }
 
         .sidebar-header {
@@ -54,12 +63,47 @@
         }
 
         .logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: var(--primary-red);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 12px;
+        }
+
+        .logo-mark {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary-red), #ef6a49 58%, var(--brand-gold));
+            color: white;
+            font-size: 22px;
+            box-shadow: 0 10px 24px rgba(200, 30, 58, 0.24);
+        }
+
+        .logo-copy {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.15;
+        }
+
+        .logo-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--brand-ink);
+            letter-spacing: 0;
+        }
+
+        .logo-title span {
+            color: var(--primary-red);
+        }
+
+        .logo-subtitle {
+            margin-top: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
         }
 
         .nav-menu {
@@ -97,12 +141,14 @@
 
         .nav-link {
             display: block;
-            padding: 12px 24px;
+            margin: 2px 12px;
+            padding: 11px 12px;
             color: var(--text-secondary);
             text-decoration: none;
             cursor: pointer;
             transition: all 0.3s ease;
-            border-left: 3px solid transparent;
+            border: 1px solid transparent;
+            border-radius: 8px;
             font-size: 14px;
             display: flex;
             align-items: center;
@@ -116,15 +162,15 @@
         }
 
         .nav-link:hover {
-            background-color: var(--light-bg);
+            background-color: #fff7ec;
             color: var(--primary-red);
-            border-left-color: var(--primary-red);
+            border-color: rgba(200, 30, 58, 0.15);
         }
 
         .nav-link.active {
             color: var(--primary-red);
-            border-left-color: var(--primary-red);
-            background-color: var(--light-bg);
+            border-color: rgba(200, 30, 58, 0.16);
+            background: linear-gradient(135deg, rgba(200, 30, 58, 0.1), rgba(245, 185, 66, 0.14));
             font-weight: 600;
         }
 
@@ -150,8 +196,9 @@
 
         .page-title {
             font-size: 28px;
-            font-weight: 700;
+            font-weight: 800;
             color: var(--text-primary);
+            letter-spacing: 0;
         }
 
         /* FILTER BAR */
@@ -211,11 +258,13 @@
             border-radius: 8px;
             padding: 20px;
             transition: all 0.3s ease;
+            box-shadow: 0 10px 28px rgba(36, 22, 26, 0.035);
         }
 
         .card:hover {
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-            border-color: var(--primary-red);
+            box-shadow: 0 16px 36px rgba(36, 22, 26, 0.075);
+            border-color: rgba(200, 30, 58, 0.28);
+            transform: translateY(-1px);
         }
 
         .card-label {
@@ -272,6 +321,7 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 20px;
+            box-shadow: 0 10px 28px rgba(36, 22, 26, 0.035);
         }
 
         .chart-title {
@@ -336,12 +386,13 @@
         }
 
         .btn-primary {
-            background: var(--primary-red);
+            background: linear-gradient(135deg, var(--primary-red), #ef6a49);
             color: white;
+            box-shadow: 0 10px 20px rgba(200, 30, 58, 0.18);
         }
 
         .btn-primary:hover {
-            background: #b81435;
+            background: linear-gradient(135deg, #ad1730, #e8593f);
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(220, 20, 60, 0.3);
         }
@@ -394,6 +445,7 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 0;
+            box-shadow: 0 8px 22px rgba(36, 22, 26, 0.03);
         }
 
         table {
@@ -403,7 +455,7 @@
         }
 
         thead {
-            background: var(--light-bg);
+            background: #fff8ee;
         }
 
         th {
@@ -454,6 +506,7 @@
             max-height: 90vh;
             overflow-y: auto;
             position: relative;
+            box-shadow: 0 24px 80px rgba(36, 22, 26, 0.22);
         }
 
         .modal-header {
@@ -692,7 +745,17 @@
             }
 
             .logo {
-                font-size: 20px;
+                justify-content: center;
+            }
+
+            .logo-mark {
+                width: 42px;
+                height: 42px;
+                border-radius: 12px;
+            }
+
+            .logo-copy {
+                display: none;
             }
 
             .nav-link {
@@ -1053,27 +1116,33 @@
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="data:application/manifest+json,{
-        %22name%22:%22GoPotatos Manager%22,
-        %22short_name%22:%22GoPotatos%22,
-        %22description%22:%22Gerenciador de entregas e estoque%22,
+        %22name%22:%22GoPotatos Pulse%22,
+        %22short_name%22:%22Pulse%22,
+        %22description%22:%22Helper financeiro inteligente da GoPotatos%22,
         %22start_url%22:%22/%22,
         %22display%22:%22standalone%22,
-        %22background_color%22:%22%23ffffff%22,
-        %22theme_color%22:%22%23DC143C%22,
+        %22background_color%22:%22%23fffaf4%22,
+        %22theme_color%22:%22%23c81e3a%22,
         %22icons%22:[{%22src%22:%22data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><text x='50%' y='50%' font-size='100' text-anchor='middle' dominant-baseline='middle' font-family='Arial'>🥔</text></svg>%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22}]
     }">
-    <meta name="theme-color" content="#DC143C">
+    <meta name="theme-color" content="#c81e3a">
     <meta name="mobile-web-app-capable" content="true">
     <meta name="apple-mobile-web-app-capable" content="true">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="GoPotatos Manager">
+    <meta name="apple-mobile-web-app-title" content="GoPotatos Pulse">
 </head>
 <body>
     <div class="container">
         <!-- SIDEBAR -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="logo">🥔 GoPotatos Manager</div>
+                <div class="logo">
+                    <div class="logo-mark">🥔</div>
+                    <div class="logo-copy">
+                        <div class="logo-title">GoPotatos <span>Pulse</span></div>
+                        <div class="logo-subtitle">Helper financeiro</div>
+                    </div>
+                </div>
             </div>
             <nav class="nav-menu">
                 <!-- VISÃO GERAL -->
@@ -1709,7 +1778,7 @@
             <!-- AUTO INSIGHTS SECTION -->
             <section class="section" id="insightsSection">
                 <div class="header">
-                    <h1 class="page-title">Insights GoPotatos</h1>
+                <h1 class="page-title">Insights do Pulse</h1>
                 </div>
                 <div id="autoInsightsContainer"></div>
             </section>
@@ -1802,7 +1871,7 @@
 
                 <div class="chart-container mb-24">
                     <div class="chart-title">📱 Baixar App</div>
-                    <p style="margin: 16px 0; color: var(--text-secondary);">Instale o GoPotatos Manager como um aplicativo no seu dispositivo</p>
+                    <p style="margin: 16px 0; color: var(--text-secondary);">Instale o GoPotatos Pulse como um aplicativo no seu dispositivo</p>
                     <button class="btn btn-primary" id="installAppBtn" style="display: none;">⬇️ Instalar App</button>
                     <p id="installMessage" style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;"></p>
                 </div>
@@ -1825,9 +1894,9 @@
                 <div class="chart-container">
                     <div class="chart-title">ℹ️ Informações</div>
                     <div style="padding: 16px; background: var(--light-bg); border-radius: 8px;">
-                        <p><strong>Aplicativo:</strong> GoPotatos Manager</p>
+                        <p><strong>Aplicativo:</strong> GoPotatos Pulse</p>
                         <p><strong>Versão:</strong> 1.0.0</p>
-                        <p><strong>Desenvolvido para:</strong> Gerenciamento de entregas e estoque</p>
+                        <p><strong>Desenvolvido para:</strong> Fechamento diário, metas, estoque e decisões rápidas</p>
                         <p style="margin-top: 16px; color: var(--text-secondary); font-size: 13px;">Todos os dados são armazenados localmente no seu navegador/dispositivo</p>
                     </div>
                 </div>
@@ -3824,7 +3893,7 @@
                 <table class="dre-table">
                     <thead>
                         <tr>
-                            <th colspan="3" style="text-align: center; padding: 20px; font-size: 16px;">GoPotatos Manager - DRE Mensal</th>
+                            <th colspan="3" style="text-align: center; padding: 20px; font-size: 16px;">GoPotatos Pulse - DRE Mensal</th>
                         </tr>
                         <tr>
                             <th colspan="3" style="text-align: center; padding: 8px; font-size: 13px; background: white; border: none;">${monthLabel}</th>
