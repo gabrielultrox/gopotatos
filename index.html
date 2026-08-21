@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>GoPotatos Pulse - Helper Financeiro</title>
     <style>
         * {
@@ -800,6 +800,337 @@
 
             .modal-content {
                 padding: 20px;
+            }
+        }
+
+        /* MOBILE APP LAYOUT */
+        @media (min-width: 769px) and (max-width: 1100px) {
+            .sidebar {
+                width: 240px;
+            }
+
+            .main-content {
+                margin-left: 240px;
+                padding: 24px;
+            }
+
+            .cards-grid {
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            html {
+                -webkit-text-size-adjust: 100%;
+            }
+
+            body {
+                padding-bottom: calc(82px + env(safe-area-inset-bottom));
+            }
+
+            .container {
+                display: block;
+                min-height: 100vh;
+            }
+
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: fixed;
+                top: auto;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 1000;
+                padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+                border-right: none;
+                border-top: 1px solid var(--border-color);
+                background:
+                    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 250, 244, 0.98));
+                box-shadow: 0 -14px 36px rgba(70, 42, 21, 0.14);
+                backdrop-filter: blur(16px);
+                overflow-x: auto;
+                overflow-y: hidden;
+            }
+
+            .sidebar-header {
+                display: none;
+            }
+
+            .nav-menu {
+                display: flex;
+                align-items: stretch;
+                gap: 6px;
+                list-style: none;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding: 0 2px;
+                scroll-snap-type: x proximity;
+                scrollbar-width: none;
+            }
+
+            .nav-menu::-webkit-scrollbar {
+                display: none;
+            }
+
+            .nav-section {
+                display: flex;
+                flex: 0 0 auto;
+                margin: 0;
+            }
+
+            .nav-section-title {
+                display: none;
+            }
+
+            .nav-section-items {
+                display: flex;
+                gap: 6px;
+                list-style: none;
+            }
+
+            .nav-item {
+                flex: 0 0 auto;
+            }
+
+            .nav-link {
+                min-width: 68px;
+                height: 60px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                margin: 0;
+                padding: 7px 8px;
+                border-radius: 14px;
+                border: 1px solid transparent;
+                font-size: 11px;
+                line-height: 1.1;
+                text-align: center;
+                white-space: nowrap;
+                scroll-snap-align: start;
+                touch-action: manipulation;
+            }
+
+            .nav-link::before {
+                content: none;
+            }
+
+            .nav-link-icon {
+                min-width: auto;
+                font-size: 20px;
+                line-height: 1;
+            }
+
+            .nav-link span:last-child {
+                display: block;
+                max-width: 62px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 16px 12px 104px;
+            }
+
+            .header {
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 18px;
+            }
+
+            .header > div[style*="display: flex"] {
+                width: 100%;
+                display: grid !important;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .page-title {
+                font-size: 22px;
+                line-height: 1.18;
+            }
+
+            .filter-bar {
+                display: flex;
+                flex-wrap: nowrap;
+                gap: 8px;
+                margin: 0 -12px 18px;
+                padding: 0 12px 4px;
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+
+            .filter-bar::-webkit-scrollbar {
+                display: none;
+            }
+
+            .filter-btn {
+                flex: 0 0 auto;
+                min-height: 40px;
+                padding: 9px 12px;
+                font-size: 13px;
+            }
+
+            .date-range-inputs {
+                flex: 0 0 100%;
+                padding-right: 12px;
+                flex-wrap: wrap;
+            }
+
+            .cards-grid,
+            .stats-row,
+            .projection-grid,
+            .report-summary {
+                grid-template-columns: 1fr;
+                gap: 12px;
+                margin-bottom: 18px;
+            }
+
+            .charts-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+                margin-bottom: 18px;
+            }
+
+            .card,
+            .chart-container {
+                padding: 14px;
+                border-radius: 12px;
+            }
+
+            .card-value {
+                font-size: 23px;
+                overflow-wrap: anywhere;
+            }
+
+            .chart-title {
+                font-size: 15px;
+            }
+
+            canvas {
+                min-height: 220px;
+            }
+
+            .btn {
+                min-height: 42px;
+                justify-content: center;
+                padding: 10px 12px;
+            }
+
+            .btn-group {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .table-container {
+                margin: 0 -2px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            table,
+            .dre-statement {
+                min-width: 720px;
+                font-size: 13px;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .form-input,
+            .form-select,
+            textarea.form-input {
+                min-height: 42px;
+                font-size: 16px;
+            }
+
+            .modal {
+                align-items: flex-end;
+                padding: 12px;
+            }
+
+            .modal-content {
+                width: 100%;
+                max-width: 100%;
+                max-height: 92vh;
+                padding: 20px;
+                border-radius: 18px 18px 0 0;
+            }
+
+            .calendar-grid {
+                gap: 6px;
+            }
+
+            .calendar-day {
+                min-height: 86px;
+                padding: 6px;
+                border-radius: 8px;
+                font-size: 10px;
+            }
+
+            .calendar-metric {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0;
+                font-size: 9px;
+            }
+
+            .calendar-metric strong {
+                text-align: left;
+            }
+
+            .calendar-event-label {
+                font-size: 9px;
+            }
+
+            .projection-values {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .main-content {
+                padding: 14px 10px 102px;
+            }
+
+            .page-title {
+                font-size: 20px;
+            }
+
+            .nav-link {
+                min-width: 60px;
+                height: 58px;
+                padding: 6px;
+                font-size: 10px;
+                border-radius: 12px;
+            }
+
+            .nav-link-icon {
+                font-size: 18px;
+            }
+
+            .nav-link span:last-child {
+                max-width: 54px;
+            }
+
+            .card,
+            .chart-container {
+                padding: 12px;
+            }
+
+            .calendar-day {
+                min-height: 76px;
+                padding: 5px;
             }
         }
 
